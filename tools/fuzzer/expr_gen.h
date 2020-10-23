@@ -115,11 +115,11 @@ struct GenConfig {
       {1.0f, 0.0f},  // ExprKind::VariableExpr
       {7.0f, 0.4f},  // ExprKind::UnaryExpr
       {3.0f, 0.4f},  // ExprKind::BinaryExpr
-      {0.0f, 0.0f},  // ExprKind::AddressOf
-      {0.0f, 0.0f},  // ExprKind::MemberOf
-      {0.0f, 0.0f},  // ExprKind::MemberOfPtr
-      {0.0f, 0.0f},  // ExprKind::ArrayIndex
-      {2.0f, 0.0f},  // ExprKind::TernaryExpr
+      {1.0f, 0.1f},  // ExprKind::AddressOf
+      {1.0f, 0.1f},  // ExprKind::MemberOf
+      {1.0f, 0.1f},  // ExprKind::MemberOfPtr
+      {1.0f, 0.1f},  // ExprKind::ArrayIndex
+      {2.0f, 0.1f},  // ExprKind::TernaryExpr
       {1.0f, 0.0f},  // ExprKind::BooleanConstant
       {1.0f, 0.4f},  // ExprKind::CastExpr
   }};
@@ -189,6 +189,10 @@ class ExprGenerator {
   UnaryExpr gen_unary_expr(const Weights& weights);
   TernaryExpr gen_ternary_expr(const Weights& weights);
   CastExpr gen_cast_expr(const Weights& weights);
+  AddressOf gen_address_of_expr(const Weights& weights);
+  MemberOf gen_member_of_expr(const Weights& weights);
+  MemberOfPtr gen_member_of_ptr_expr(const Weights& weights);
+  ArrayIndex gen_array_index_expr(const Weights& weights);
 
   Type gen_type(const Weights& weights);
   QualifiedType gen_qualified_type(const Weights& weights);

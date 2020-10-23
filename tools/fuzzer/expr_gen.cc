@@ -123,6 +123,43 @@ CastExpr ExprGenerator::gen_cast_expr(const Weights& weights) {
   return CastExpr(std::move(type), std::move(expr));
 }
 
+AddressOf ExprGenerator::gen_address_of_expr(const Weights& weights) {
+  auto expr = gen_with_weights(weights);
+  if (expr_precedence(expr) > AddressOf::PRECEDENCE) {
+    expr = ParenthesizedExpr(std::move(expr));
+  }
+
+  return AddressOf(std::move(expr));
+}
+
+MemberOf ExprGenerator::gen_member_of_expr(const Weights& weights) {
+  auto expr = gen_with_weights(weights);
+  if (expr_precedence(expr) > MemberOf::PRECEDENCE) {
+    expr = ParenthesizedExpr(std::move(expr));
+  }
+
+  return MemberOf(std::move(expr), "f1");
+}
+
+MemberOfPtr ExprGenerator::gen_member_of_ptr_expr(const Weights& weights) {
+  auto expr = gen_with_weights(weights);
+  if (expr_precedence(expr) > MemberOfPtr::PRECEDENCE) {
+    expr = ParenthesizedExpr(std::move(expr));
+  }
+
+  return MemberOfPtr(std::move(expr), "f1");
+}
+
+ArrayIndex ExprGenerator::gen_array_index_expr(const Weights& weights) {
+  auto expr = gen_with_weights(weights);
+  auto idx = gen_with_weights(weights);
+  if (expr_precedence(expr) > ArrayIndex::PRECEDENCE) {
+    expr = ParenthesizedExpr(std::move(expr));
+  }
+
+  return ArrayIndex(std::move(expr), std::move(idx));
+}
+
 Expr ExprGenerator::gen_with_weights(const Weights& weights) {
   Weights new_weights = weights;
 
@@ -163,6 +200,22 @@ Expr ExprGenerator::gen_with_weights(const Weights& weights) {
 
     case ExprKind::CastExpr:
       expr = gen_cast_expr(new_weights);
+      break;
+
+    case ExprKind::AddressOf:
+      expr = gen_address_of_expr(new_weights);
+      break;
+
+    case ExprKind::MemberOf:
+      expr = gen_member_of_expr(new_weights);
+      break;
+
+    case ExprKind::MemberOfPtr:
+      expr = gen_member_of_ptr_expr(new_weights);
+      break;
+
+    case ExprKind::ArrayIndex:
+      expr = gen_array_index_expr(new_weights);
       break;
 
     default:
