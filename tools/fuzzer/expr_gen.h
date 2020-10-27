@@ -42,7 +42,7 @@ enum class ExprKind : unsigned char {
   CastExpr,
   EnumLast = CastExpr,
 };
-constexpr size_t NUM_GEN_EXPR_KINDS = (size_t)ExprKind::EnumLast + 1;
+inline constexpr size_t NUM_GEN_EXPR_KINDS = (size_t)ExprKind::EnumLast + 1;
 
 enum class TypeKind : unsigned char {
   ScalarType,
@@ -51,33 +51,12 @@ enum class TypeKind : unsigned char {
   ReferenceType,
   EnumLast = ReferenceType,
 };
-constexpr size_t NUM_GEN_TYPE_KINDS = (size_t)TypeKind::EnumLast + 1;
+inline constexpr size_t NUM_GEN_TYPE_KINDS = (size_t)TypeKind::EnumLast + 1;
 
-class Weights {
- public:
-  using ExprWeightsArray = std::array<float, NUM_GEN_EXPR_KINDS>;
-  using TypeWeightsArray = std::array<float, NUM_GEN_TYPE_KINDS>;
+enum class ScalarConstraints : unsigned char { AllowInts, AllowFloats };
 
-  ExprWeightsArray& expr_weights() { return expr_weights_; }
-  const ExprWeightsArray& expr_weights() const { return expr_weights_; }
-
-  TypeWeightsArray& type_weights() { return type_weights_; }
-  const TypeWeightsArray& type_weights() const { return type_weights_; }
-
-  float& operator[](ExprKind kind) { return expr_weights_[(size_t)kind]; }
-  float& operator[](TypeKind kind) { return type_weights_[(size_t)kind]; }
-
-  const float& operator[](ExprKind kind) const {
-    return expr_weights_[(size_t)kind];
-  }
-  const float& operator[](TypeKind kind) const {
-    return type_weights_[(size_t)kind];
-  }
-
- private:
-  std::array<float, NUM_GEN_EXPR_KINDS> expr_weights_;
-  std::array<float, NUM_GEN_TYPE_KINDS> type_weights_;
-};
+class Weights;
+class TypeConstraints;
 
 struct ExprKindWeightInfo {
   float initial_weight;

@@ -78,6 +78,9 @@ static const char* SCALAR_TYPES_STRINGS[NUM_SCALAR_TYPES] = {
     "unsigned long",       // ScalarType::UnsignedLong
     "long long",           // ScalarType::SignedLongLong
     "unsigned long long",  // ScalarType::UnsignedLongLong
+    "float",               // ScalarType::Float
+    "double",              // ScalarType::Double
+    "long double",         // ScalarType::LongDouble
 };
 
 std::ostream& operator<<(std::ostream& os, CvQualifiers qualifiers) {
@@ -115,6 +118,14 @@ std::ostream& operator<<(std::ostream& os, const PointerType& type) {
 
 ReferenceType::ReferenceType(QualifiedType type) : type_(std::move(type)) {}
 const QualifiedType& ReferenceType::type() const { return type_; }
+bool ReferenceType::can_reference_rvalue() const {
+  // C++ allows the lifetime rvalues to be extended by references that are:
+  // - const
+  // - non-volatile
+  auto qualifiers = type_.cv_qualifiers();
+  return qualifiers[(size_t)CvQualifier::Const] &&
+         !qualifiers[(size_t)CvQualifier::Volatile];
+}
 std::ostream& operator<<(std::ostream& os, const ReferenceType& type) {
   return os << type.type() << "&";
 }

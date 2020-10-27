@@ -17,6 +17,7 @@
 #include "tools/fuzzer/expr_gen.h"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <random>
 #include <type_traits>
@@ -26,6 +27,188 @@
 #include "tools/fuzzer/ast.h"
 
 namespace fuzzer {
+
+class Weights {
+ public:
+  using ExprWeightsArray = std::array<float, NUM_GEN_EXPR_KINDS>;
+  using TypeWeightsArray = std::array<float, NUM_GEN_TYPE_KINDS>;
+
+  ExprWeightsArray& expr_weights() { return expr_weights_; }
+  const ExprWeightsArray& expr_weights() const { return expr_weights_; }
+
+  TypeWeightsArray& type_weights() { return type_weights_; }
+  const TypeWeightsArray& type_weights() const { return type_weights_; }
+
+  float& operator[](ExprKind kind) { return expr_weights_[(size_t)kind]; }
+  float& operator[](TypeKind kind) { return type_weights_[(size_t)kind]; }
+
+  const float& operator[](ExprKind kind) const {
+    return expr_weights_[(size_t)kind];
+  }
+  const float& operator[](TypeKind kind) const {
+    return type_weights_[(size_t)kind];
+  }
+
+ private:
+  std::array<float, NUM_GEN_EXPR_KINDS> expr_weights_;
+  std::array<float, NUM_GEN_TYPE_KINDS> type_weights_;
+};
+
+enum class AllowedTypeKinds {
+  // Any integer type or any time implicitly treated as an integer type
+  // (e.g. `bool`) is allowed.
+  AnyInt,
+
+  // Any type that can be implicitly treated as an integer or floating point
+  // type (e.g. `int`, `bool`, `float`) is allowed.
+  AnyFloat,
+
+  // Any pointer type.
+  AnyPointer,
+
+  // Any type that can be used in a boolean context (i.e. the condition in an
+  // `if` or `while` statement, and all operands to the `&&`, `||` and `!`
+  // operators) is allowed.
+  AnyForBoolContext,
+
+  // Any type (useful for e.g. `(void) expr`).
+  AnyType,
+};
+
+using AllowedExprKinds = std::bitset<NUM_GEN_EXPR_KINDS>;
+
+using TypeToGen =
+    std::variant<AllowedTypeKinds, std::reference_wrapper<const QualifiedType>,
+                 std::reference_wrapper<const ReferenceType>>;
+
+class TypeConstraints {
+ public:
+  bool must_be_lvalue() const { return must_be_lvalue_; }
+  const TypeToGen& type() const { return type_; }
+
+ private:
+  bool must_be_lvalue_ = false;
+
+  TypeToGen type_;
+};
+
+class AllowedExprKindsVisitor {
+ public:
+  AllowedExprKinds operator()(AllowedTypeKinds kinds) {
+    if (kinds == AllowedTypeKinds::AnyType) {
+      return AllowedExprKinds(~0ull);
+    }
+
+    AllowedExprKinds retval = 0;
+
+    // `0` is the null pointer constant, hence we can always use `0` as an
+    // integer constant.
+    retval[(size_t)ExprKind::IntegerConstant] = true;
+
+    // We can always generate ternary expressions (e.g. a ternary exception with
+    // the same left hand side and right hand side).
+    retval[(size_t)ExprKind::TernaryExpr] = true;
+
+    // We can always generate cast expressions (e.g. a no-op cast).
+    retval[(size_t)ExprKind::CastExpr] = true;
+
+    // We can always generate `(expr + 0)` for a given expression.
+    retval[(size_t)ExprKind::BinaryExpr] = true;
+
+    retval[(size_t)ExprKind::VariableExpr] = true;
+
+    if (kinds != AllowedTypeKinds::AnyPointer) {
+      // We can only use `!` for pointers if we're concerned about a boolean
+      // context.
+      retval[(size_t)ExprKind::UnaryExpr] = true;
+      // `false` is not a null pointer constant.
+      retval[(size_t)ExprKind::BooleanConstant] = true;
+    }
+
+    if (kinds == AllowedTypeKinds::AnyFloat ||
+        kinds == AllowedTypeKinds::AnyForBoolContext) {
+      retval[(size_t)ExprKind::DoubleConstant] = true;
+    }
+
+    // TODO(alextasos): Deal with the following cases:
+    // retval[(size_t)ExprKind::AddressOf] = true;
+    // retval[(size_t)ExprKind::MemberOf] = true;
+    // retval[(size_t)ExprKind::MemberOfPtr] = true;
+    // retval[(size_t)ExprKind::ArrayIndex] = true;
+
+    return retval;
+  }
+
+  AllowedExprKinds operator()(const ReferenceType& type) {
+    auto retval = (*this)(type.type());
+    if (!type.can_reference_rvalue()) {
+      retval[(size_t)ExprKind::IntegerConstant] = false;
+      retval[(size_t)ExprKind::BooleanConstant] = false;
+      retval[(size_t)ExprKind::DoubleConstant] = false;
+      retval[(size_t)ExprKind::UnaryExpr] = false;
+      retval[(size_t)ExprKind::TernaryExpr] = false;
+      retval[(size_t)ExprKind::CastExpr] = false;
+    }
+
+    return retval;
+  }
+
+  AllowedExprKinds operator()(const QualifiedType& type) {
+    return std::visit(*this, type.type());
+  }
+
+  AllowedExprKinds operator()(const ScalarType& type) {
+    AllowedExprKinds retval = ~0ull;
+    if (type == ScalarType::Void) {
+      return retval;
+    }
+    retval[(size_t)ExprKind::AddressOf] = false;
+
+    if (type == ScalarType::Float || type == ScalarType::Double ||
+        type == ScalarType::LongDouble) {
+      return retval;
+    }
+    retval[(size_t)ExprKind::DoubleConstant] = false;
+
+    return retval;
+  }
+
+  AllowedExprKinds operator()(const TaggedType&) {
+    AllowedExprKinds retval = 0;
+    retval[(size_t)ExprKind::VariableExpr] = true;
+    retval[(size_t)ExprKind::CastExpr] = false;
+
+    return retval;
+  }
+
+  AllowedExprKinds operator()(const PointerType& type) {
+    AllowedExprKinds retval = 0;
+    retval[(size_t)ExprKind::IntegerConstant] = true;
+
+    if (std::holds_alternative<PointerType>(type.type().type())) {
+      return retval;
+    }
+
+    retval[(size_t)ExprKind::AddressOf] = true;
+    retval[(size_t)ExprKind::VariableExpr] = true;
+
+    return retval;
+  }
+};
+
+AllowedExprKinds allowed_expr_kinds(const TypeConstraints constraints) {
+  auto retval = std::visit(AllowedExprKindsVisitor(), constraints.type());
+  if (constraints.must_be_lvalue()) {
+    // TODO(alextasos): Duplicate code below
+    retval[(size_t)ExprKind::IntegerConstant] = false;
+    retval[(size_t)ExprKind::DoubleConstant] = false;
+    retval[(size_t)ExprKind::UnaryExpr] = false;
+    retval[(size_t)ExprKind::TernaryExpr] = false;
+    retval[(size_t)ExprKind::CastExpr] = false;
+  }
+
+  return retval;
+}
 
 int expr_precedence(const Expr& e) {
   return std::visit([](const auto& e) { return e.precedence(); }, e);

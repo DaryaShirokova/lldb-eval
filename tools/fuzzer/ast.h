@@ -62,7 +62,10 @@ enum class ScalarType : unsigned char {
   UnsignedLong,
   SignedLongLong,
   UnsignedLongLong,
-  EnumMax = UnsignedLongLong,
+  Float,
+  Double,
+  LongDouble,
+  EnumMax = LongDouble,
 };
 inline constexpr size_t NUM_SCALAR_TYPES = (size_t)ScalarType::EnumMax + 1;
 std::ostream& operator<<(std::ostream& os, ScalarType type);
@@ -110,6 +113,7 @@ class ReferenceType {
   explicit ReferenceType(QualifiedType type);
 
   const QualifiedType& type() const;
+  bool can_reference_rvalue() const;
 
   friend std::ostream& operator<<(std::ostream& os, const ReferenceType& type);
 
