@@ -218,7 +218,8 @@ BooleanConstant ExprGenerator::gen_boolean_constant() {
   return BooleanConstant(rng_->gen_boolean());
 }
 
-IntegerConstant ExprGenerator::gen_integer_constant() {
+IntegerConstant ExprGenerator::gen_integer_constant(
+    const TypeConstraints& constraints) {
   auto value = rng_->gen_u64(cfg_.int_const_min, cfg_.int_const_max);
 
   return IntegerConstant(value);
@@ -231,9 +232,13 @@ DoubleConstant ExprGenerator::gen_double_constant() {
   return DoubleConstant(value);
 }
 
-VariableExpr ExprGenerator::gen_variable_expr() { return VariableExpr(VAR); }
+VariableExpr ExprGenerator::gen_variable_expr(
+    const TypeConstraints& constraints) {
+  return VariableExpr(VAR);
+}
 
-BinaryExpr ExprGenerator::gen_binary_expr(const Weights& weights) {
+BinaryExpr ExprGenerator::gen_binary_expr(const Weights& weights,
+                                          const TypeConstraints& constraints) {
   auto op = rng_->gen_bin_op(cfg_.bin_op_mask);
 
   auto lhs = gen_with_weights(weights);
@@ -272,7 +277,8 @@ BinaryExpr ExprGenerator::gen_binary_expr(const Weights& weights) {
   return BinaryExpr(std::move(lhs), op, std::move(rhs));
 }
 
-UnaryExpr ExprGenerator::gen_unary_expr(const Weights& weights) {
+UnaryExpr ExprGenerator::gen_unary_expr(const Weights& weights,
+                                        const TypeConstraints& constraints) {
   auto expr = gen_with_weights(weights);
   auto op = (UnOp)rng_->gen_un_op(cfg_.un_op_mask);
 
@@ -283,7 +289,8 @@ UnaryExpr ExprGenerator::gen_unary_expr(const Weights& weights) {
   return UnaryExpr(op, std::move(expr));
 }
 
-TernaryExpr ExprGenerator::gen_ternary_expr(const Weights& weights) {
+TernaryExpr ExprGenerator::gen_ternary_expr(
+    const Weights& weights, const TypeConstraints& constraints) {
   auto cond = gen_with_weights(weights);
   auto lhs = gen_with_weights(weights);
   auto rhs = gen_with_weights(weights);
@@ -295,7 +302,8 @@ TernaryExpr ExprGenerator::gen_ternary_expr(const Weights& weights) {
   return TernaryExpr(std::move(cond), std::move(lhs), std::move(rhs));
 }
 
-CastExpr ExprGenerator::gen_cast_expr(const Weights& weights) {
+CastExpr ExprGenerator::gen_cast_expr(const Weights& weights,
+                                      const TypeConstraints& constraints) {
   auto type = gen_type(weights);
   auto expr = gen_with_weights(weights);
 
@@ -306,7 +314,8 @@ CastExpr ExprGenerator::gen_cast_expr(const Weights& weights) {
   return CastExpr(std::move(type), std::move(expr));
 }
 
-AddressOf ExprGenerator::gen_address_of_expr(const Weights& weights) {
+AddressOf ExprGenerator::gen_address_of_expr(
+    const Weights& weights, const TypeConstraints& constraints) {
   auto expr = gen_with_weights(weights);
   if (expr_precedence(expr) > AddressOf::PRECEDENCE) {
     expr = ParenthesizedExpr(std::move(expr));
@@ -315,7 +324,8 @@ AddressOf ExprGenerator::gen_address_of_expr(const Weights& weights) {
   return AddressOf(std::move(expr));
 }
 
-MemberOf ExprGenerator::gen_member_of_expr(const Weights& weights) {
+MemberOf ExprGenerator::gen_member_of_expr(const Weights& weights,
+                                           const TypeConstraints& constraints) {
   auto expr = gen_with_weights(weights);
   if (expr_precedence(expr) > MemberOf::PRECEDENCE) {
     expr = ParenthesizedExpr(std::move(expr));
@@ -324,7 +334,8 @@ MemberOf ExprGenerator::gen_member_of_expr(const Weights& weights) {
   return MemberOf(std::move(expr), "f1");
 }
 
-MemberOfPtr ExprGenerator::gen_member_of_ptr_expr(const Weights& weights) {
+MemberOfPtr ExprGenerator::gen_member_of_ptr_expr(
+    const Weights& weights, const TypeConstraints& constraints) {
   auto expr = gen_with_weights(weights);
   if (expr_precedence(expr) > MemberOfPtr::PRECEDENCE) {
     expr = ParenthesizedExpr(std::move(expr));
@@ -333,7 +344,8 @@ MemberOfPtr ExprGenerator::gen_member_of_ptr_expr(const Weights& weights) {
   return MemberOfPtr(std::move(expr), "f1");
 }
 
-ArrayIndex ExprGenerator::gen_array_index_expr(const Weights& weights) {
+ArrayIndex ExprGenerator::gen_array_index_expr(
+    const Weights& weights, const TypeConstraints& constraints) {
   auto expr = gen_with_weights(weights);
   auto idx = gen_with_weights(weights);
   if (expr_precedence(expr) > ArrayIndex::PRECEDENCE) {
@@ -343,7 +355,8 @@ ArrayIndex ExprGenerator::gen_array_index_expr(const Weights& weights) {
   return ArrayIndex(std::move(expr), std::move(idx));
 }
 
-Expr ExprGenerator::gen_with_weights(const Weights& weights) {
+Expr ExprGenerator::gen_with_weights(const Weights& weights,
+                                     const TypeConstraints& constraints) {
   Weights new_weights = weights;
 
   auto kind = rng_->gen_expr_kind(new_weights);

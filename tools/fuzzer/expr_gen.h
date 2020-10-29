@@ -161,26 +161,37 @@ class ExprGenerator {
   Expr maybe_parenthesized(Expr expr);
 
   BooleanConstant gen_boolean_constant();
-  IntegerConstant gen_integer_constant();
+  IntegerConstant gen_integer_constant(const TypeConstraints& constraints);
   DoubleConstant gen_double_constant();
-  VariableExpr gen_variable_expr();
-  BinaryExpr gen_binary_expr(const Weights& weights);
-  UnaryExpr gen_unary_expr(const Weights& weights);
-  TernaryExpr gen_ternary_expr(const Weights& weights);
-  CastExpr gen_cast_expr(const Weights& weights);
-  AddressOf gen_address_of_expr(const Weights& weights);
-  MemberOf gen_member_of_expr(const Weights& weights);
-  MemberOfPtr gen_member_of_ptr_expr(const Weights& weights);
-  ArrayIndex gen_array_index_expr(const Weights& weights);
+  VariableExpr gen_variable_expr(const TypeConstraints& constraints);
+  BinaryExpr gen_binary_expr(const Weights& weights,
+                             const TypeConstraints& constraints);
+  UnaryExpr gen_unary_expr(const Weights& weights,
+                           const TypeConstraints& constraints);
+  TernaryExpr gen_ternary_expr(const Weights& weights,
+                               const TypeConstraints& constraints);
+  CastExpr gen_cast_expr(const Weights& weights,
+                         const TypeConstraints& constraints);
+  AddressOf gen_address_of_expr(const Weights& weights,
+                                const TypeConstraints& constraints);
+  MemberOf gen_member_of_expr(const Weights& weights,
+                              const TypeConstraints& constraints);
+  MemberOfPtr gen_member_of_ptr_expr(const Weights& weights,
+                                     const TypeConstraints& constraints);
+  ArrayIndex gen_array_index_expr(const Weights& weights,
+                                  const TypeConstraints& constraints);
 
-  Type gen_type(const Weights& weights);
-  QualifiedType gen_qualified_type(const Weights& weights);
-  PointerType gen_pointer_type(const Weights& weights);
-  TaggedType gen_tagged_type();
-  ScalarType gen_scalar_type();
+  Type gen_type(const Weights& weights, const TypeConstraints& constraints);
+  QualifiedType gen_qualified_type(const Weights& weights,
+                                   const TypeConstraints& constraints);
+  PointerType gen_pointer_type(const Weights& weights,
+                               const TypeConstraints& constraints);
+  TaggedType gen_tagged_type(const TypeConstraints& constraints);
+  ScalarType gen_scalar_type(const TypeConstraints& constraints);
   CvQualifiers gen_cv_qualifiers();
 
-  Expr gen_with_weights(const Weights& weights);
+  Expr gen_with_weights(const Weights& weights,
+                        const TypeConstraints& constraints);
 
  private:
   std::unique_ptr<GeneratorRng> rng_;
