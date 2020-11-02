@@ -22,6 +22,7 @@
 #include <iosfwd>
 #include <memory>
 #include <string>
+#include <typeindex>  // forward references `std::hash`
 #include <variant>
 
 namespace fuzzer {
@@ -44,6 +45,15 @@ inline constexpr size_t NUM_CV_QUALIFIERS = (size_t)CvQualifier::EnumLast + 1;
 using CvQualifiers = std::bitset<NUM_CV_QUALIFIERS>;
 
 std::ostream& operator<<(std::ostream& os, CvQualifiers qualifiers);
+
+enum class TypeKind : unsigned char {
+  ScalarType,
+  TaggedType,
+  PointerType,
+  ReferenceType,
+  EnumLast = ReferenceType,
+};
+inline constexpr size_t NUM_GEN_TYPE_KINDS = (size_t)TypeKind::EnumLast + 1;
 
 enum class ScalarType : unsigned char {
   EnumMin,
@@ -77,6 +87,8 @@ class TaggedType {
   const std::string& name() const;
 
   friend std::ostream& operator<<(std::ostream& os, const TaggedType& type);
+  bool operator==(const TaggedType& rhs) const;
+  bool operator!=(const TaggedType& rhs) const;
 
  private:
   std::string name_;
@@ -90,6 +102,8 @@ class QualifiedType {
   CvQualifiers cv_qualifiers() const;
 
   friend std::ostream& operator<<(std::ostream& os, const QualifiedType& type);
+  bool operator==(const QualifiedType& type);
+  bool operator!=(const QualifiedType& type);
 
  private:
   std::unique_ptr<QualifiableType> type_;
@@ -103,6 +117,8 @@ class PointerType {
   const QualifiedType& type() const;
 
   friend std::ostream& operator<<(std::ostream& os, const PointerType& type);
+  bool operator==(const PointerType& type);
+  bool operator!=(const PointerType& type);
 
  private:
   QualifiedType type_;
@@ -116,6 +132,8 @@ class ReferenceType {
   bool can_reference_rvalue() const;
 
   friend std::ostream& operator<<(std::ostream& os, const ReferenceType& type);
+  bool operator==(const ReferenceType& type);
+  bool operator!=(const ReferenceType& type);
 
  private:
   QualifiedType type_;
@@ -407,5 +425,30 @@ void dump_expr(const Expr& expr);
 int bin_op_precedence(BinOp op);
 
 }  // namespace fuzzer
+
+// Forward declarations of hash specializations
+namespace std {
+
+template <>
+struct hash<fuzzer::PointerType> {
+  size_t operator()(const fuzzer::PointerType& type) const;
+};
+
+template <>
+struct hash<fuzzer::QualifiedType> {
+  size_t operator()(const fuzzer::QualifiedType& type) const;
+};
+
+template <>
+struct hash<fuzzer::ReferenceType> {
+  size_t operator()(const fuzzer::ReferenceType& type) const;
+};
+
+template <>
+struct hash<fuzzer::TaggedType> {
+  size_t operator()(const fuzzer::TaggedType& type) const;
+};
+
+}  // namespace std
 
 #endif  // INCLUDE_AST_H

@@ -44,15 +44,6 @@ enum class ExprKind : unsigned char {
 };
 inline constexpr size_t NUM_GEN_EXPR_KINDS = (size_t)ExprKind::EnumLast + 1;
 
-enum class TypeKind : unsigned char {
-  ScalarType,
-  TaggedType,
-  PointerType,
-  ReferenceType,
-  EnumLast = ReferenceType,
-};
-inline constexpr size_t NUM_GEN_TYPE_KINDS = (size_t)TypeKind::EnumLast + 1;
-
 enum class ScalarConstraints : unsigned char { AllowInts, AllowFloats };
 
 class Weights;

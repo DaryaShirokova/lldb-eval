@@ -20,8 +20,11 @@
 #include <cstdio>
 #include <memory>
 #include <sstream>
+#include <type_traits>
 #include <utility>
 #include <variant>
+
+#include "tools/fuzzer/expr_gen.h"
 
 namespace fuzzer {
 
@@ -429,3 +432,53 @@ void dump_expr(const Expr& expr) { std::visit(ExprDumper(), expr); }
 int bin_op_precedence(BinOp op) { return BIN_OP_TABLE[(size_t)op].precedence; }
 
 }  // namespace fuzzer
+
+static inline size_t hash_combine_impl(size_t acc) { return acc; }
+
+template <typename T, typename... Rest>
+static inline size_t hash_combine_impl(size_t acc, T&& v, Rest&&... rest) {
+  // std::hash has specializations for e.g. `std::string`, but not for `const
+  // std::string&`, so remove any cv-qualified reference from type `T`.
+  using Type = std::remove_cv_t<std::remove_reference_t<T>>;
+  std::hash<Type> hasher;
+  // Disclaimer: Hash combining algorithm is taken from `boost::hash_combine`,
+  // no idea how it fares in practice.
+  acc ^= hasher(std::forward<T>(v)) + 0x9e3779b9u + (acc << 6) + (acc >> 2);
+  return hash_combine_impl(acc, std::forward<Rest>(rest)...);
+}
+
+/*
+ * Combines multiple hash values together. This is equivalent to
+ * `boost::hash_combine`, albeit with support for perfect forwarding (so that
+ * invocation of `hash_combine` can be conveniently a one-liner).
+ */
+template <typename... Args>
+static inline size_t hash_combine(Args&&... args) {
+  return hash_combine_impl(0, std::forward<Args>(args)...);
+}
+
+namespace std {
+
+using fuzzer::PointerType;
+using fuzzer::QualifiedType;
+using fuzzer::ReferenceType;
+using fuzzer::TaggedType;
+using fuzzer::TypeKind;
+
+size_t hash<PointerType>::operator()(const PointerType& type) const {
+  return hash_combine(TypeKind::PointerType, type.type());
+}
+
+size_t hash<QualifiedType>::operator()(const QualifiedType& type) const {
+  return hash_combine(type.cv_qualifiers(), type.type());
+}
+
+size_t hash<ReferenceType>::operator()(const ReferenceType& type) const {
+  return hash_combine(TypeKind::ReferenceType, type.type());
+}
+
+size_t hash<TaggedType>::operator()(const TaggedType& type) const {
+  return hash_combine(TypeKind::TaggedType, type.name());
+}
+
+}  // namespace std
