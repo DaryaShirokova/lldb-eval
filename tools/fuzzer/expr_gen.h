@@ -112,8 +112,8 @@ class GeneratorRng {
   virtual TypeKind gen_type_kind(const Weights& array) = 0;
   virtual ScalarType gen_scalar_type() = 0;
   virtual bool gen_boolean() = 0;
-  virtual uint64_t gen_u64(uint64_t min, uint64_t max) = 0;
-  virtual double gen_double(double min, double max) = 0;
+  virtual IntegerConstant gen_integer_constant(uint64_t min, uint64_t max) = 0;
+  virtual DoubleConstant gen_double_constant(double min, double max) = 0;
   virtual bool gen_parenthesize(float probability) = 0;
   virtual CvQualifiers gen_cv_qualifiers(float const_prob,
                                          float volatile_prob) = 0;
@@ -129,8 +129,8 @@ class DefaultGeneratorRng : public GeneratorRng {
   TypeKind gen_type_kind(const Weights& array) override;
   ScalarType gen_scalar_type() override;
   bool gen_boolean() override;
-  uint64_t gen_u64(uint64_t min, uint64_t max) override;
-  double gen_double(double min, double max) override;
+  IntegerConstant gen_integer_constant(uint64_t min, uint64_t max) override;
+  DoubleConstant gen_double_constant(double min, double max) override;
   bool gen_parenthesize(float probability) override;
   CvQualifiers gen_cv_qualifiers(float const_prob,
                                  float volatile_prob) override;
