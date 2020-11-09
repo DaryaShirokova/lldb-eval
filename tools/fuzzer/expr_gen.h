@@ -20,7 +20,9 @@
 #include <array>
 #include <bitset>
 #include <cstdint>
+#include <optional>
 #include <random>
+#include <unordered_map>
 
 #include "tools/fuzzer/ast.h"
 
@@ -44,7 +46,8 @@ enum class ExprKind : unsigned char {
 };
 inline constexpr size_t NUM_GEN_EXPR_KINDS = (size_t)ExprKind::EnumLast + 1;
 
-enum class ScalarConstraints : unsigned char { AllowInts, AllowFloats };
+using ExprKindMask = std::bitset<NUM_GEN_EXPR_KINDS>;
+using TypeKindMask = std::bitset<NUM_GEN_TYPE_KINDS>;
 
 class Weights;
 class TypeConstraints;
@@ -98,8 +101,9 @@ struct GenConfig {
       {2.0f, 0.0f},  // TypeKind::ScalarType
       {1.0f, 0.0f},  // TypeKind::TaggedType
       {1.0f, 0.1f},  // TypeKind::PointerType
-      {1.0f, 0.1f},  // TypeKind::ReferenceType
   }};
+
+  std::unordered_map<Type, std::vector<std::string>> symbol_table;
 };
 
 class GeneratorRng {
@@ -108,8 +112,10 @@ class GeneratorRng {
 
   virtual BinOp gen_bin_op(BinOpMask mask) = 0;
   virtual UnOp gen_un_op(UnOpMask mask) = 0;
-  virtual ExprKind gen_expr_kind(const Weights& array) = 0;
-  virtual TypeKind gen_type_kind(const Weights& array) = 0;
+  virtual ExprKind gen_expr_kind(const Weights& weights,
+                                 const ExprKindMask& mask) = 0;
+  virtual TypeKind gen_type_kind(const Weights& weights,
+                                 const TypeKindMask& mask) = 0;
   virtual ScalarType gen_scalar_type() = 0;
   virtual bool gen_boolean() = 0;
   virtual IntegerConstant gen_integer_constant(uint64_t min, uint64_t max) = 0;
@@ -125,8 +131,10 @@ class DefaultGeneratorRng : public GeneratorRng {
 
   BinOp gen_bin_op(BinOpMask mask) override;
   UnOp gen_un_op(UnOpMask mask) override;
-  ExprKind gen_expr_kind(const Weights& array) override;
-  TypeKind gen_type_kind(const Weights& array) override;
+  ExprKind gen_expr_kind(const Weights& weights,
+                         const ExprKindMask& mask) override;
+  TypeKind gen_type_kind(const Weights& weights,
+                         const TypeKindMask& mask) override;
   ScalarType gen_scalar_type() override;
   bool gen_boolean() override;
   IntegerConstant gen_integer_constant(uint64_t min, uint64_t max) override;
@@ -141,48 +149,47 @@ class DefaultGeneratorRng : public GeneratorRng {
 
 class ExprGenerator {
  public:
-  ExprGenerator(std::unique_ptr<GeneratorRng> rng, const GenConfig& cfg)
-      : rng_(std::move(rng)), cfg_(cfg) {}
+  ExprGenerator(std::unique_ptr<GeneratorRng> rng, GenConfig cfg)
+      : rng_(std::move(rng)), cfg_(std::move(cfg)) {}
 
-  Expr generate();
+  std::optional<Expr> generate();
 
  private:
-  static constexpr char VAR[] = "x";
-
   Expr maybe_parenthesized(Expr expr);
 
-  BooleanConstant gen_boolean_constant();
-  IntegerConstant gen_integer_constant(const TypeConstraints& constraints);
-  DoubleConstant gen_double_constant();
-  VariableExpr gen_variable_expr(const TypeConstraints& constraints);
-  BinaryExpr gen_binary_expr(const Weights& weights,
-                             const TypeConstraints& constraints);
-  UnaryExpr gen_unary_expr(const Weights& weights,
-                           const TypeConstraints& constraints);
-  TernaryExpr gen_ternary_expr(const Weights& weights,
-                               const TypeConstraints& constraints);
-  CastExpr gen_cast_expr(const Weights& weights,
-                         const TypeConstraints& constraints);
-  AddressOf gen_address_of_expr(const Weights& weights,
-                                const TypeConstraints& constraints);
-  MemberOf gen_member_of_expr(const Weights& weights,
-                              const TypeConstraints& constraints);
-  MemberOfPtr gen_member_of_ptr_expr(const Weights& weights,
+  std::optional<Expr> gen_boolean_constant(const TypeConstraints& constraints);
+  std::optional<Expr> gen_integer_constant(const TypeConstraints& constraints);
+  std::optional<Expr> gen_double_constant(const TypeConstraints& constraints);
+  std::optional<Expr> gen_variable_expr(const TypeConstraints& constraints);
+  std::optional<Expr> gen_binary_expr(const Weights& weights,
+                                      const TypeConstraints& constraints);
+  std::optional<Expr> gen_unary_expr(const Weights& weights,
                                      const TypeConstraints& constraints);
-  ArrayIndex gen_array_index_expr(const Weights& weights,
-                                  const TypeConstraints& constraints);
+  std::optional<Expr> gen_ternary_expr(const Weights& weights,
+                                       const TypeConstraints& constraints);
+  std::optional<Expr> gen_cast_expr(const Weights& weights,
+                                    const TypeConstraints& constraints);
+  std::optional<Expr> gen_address_of_expr(const Weights& weights,
+                                          const TypeConstraints& constraints);
+  std::optional<Expr> gen_member_of_expr(const Weights& weights,
+                                         const TypeConstraints& constraints);
+  std::optional<Expr> gen_member_of_ptr_expr(
+      const Weights& weights, const TypeConstraints& constraints);
+  std::optional<Expr> gen_array_index_expr(const Weights& weights,
+                                           const TypeConstraints& constraints);
 
-  Type gen_type(const Weights& weights, const TypeConstraints& constraints);
-  QualifiedType gen_qualified_type(const Weights& weights,
-                                   const TypeConstraints& constraints);
-  PointerType gen_pointer_type(const Weights& weights,
+  std::optional<Type> gen_type(const Weights& weights,
                                const TypeConstraints& constraints);
-  TaggedType gen_tagged_type(const TypeConstraints& constraints);
-  ScalarType gen_scalar_type(const TypeConstraints& constraints);
+  std::optional<QualifiedType> gen_qualified_type(
+      const Weights& weights, const TypeConstraints& constraints);
+  std::optional<Type> gen_pointer_type(const Weights& weights,
+                                       const TypeConstraints& constraints);
+  std::optional<Type> gen_tagged_type(const TypeConstraints& constraints);
+  std::optional<Type> gen_scalar_type(const TypeConstraints& constraints);
   CvQualifiers gen_cv_qualifiers();
 
-  Expr gen_with_weights(const Weights& weights,
-                        const TypeConstraints& constraints);
+  std::optional<Expr> gen_with_weights(const Weights& weights,
+                                       const TypeConstraints& constraints);
 
  private:
   std::unique_ptr<GeneratorRng> rng_;

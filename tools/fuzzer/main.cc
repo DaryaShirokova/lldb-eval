@@ -41,8 +41,6 @@
 
 using bazel::tools::cpp::runfiles::Runfiles;
 
-constexpr char VAR[] = "x";
-
 constexpr char SOURCE_PATH_KEY[] = "lldb_eval/testdata/fuzzer_binary.cc";
 constexpr char BINARY_PATH_KEY[] = "lldb_eval/testdata/fuzzer_binary";
 
@@ -73,9 +71,6 @@ void run_fuzzer(lldb::SBFrame& frame) {
   auto seed = rd();
   printf("Seed for this run is: %u\n", seed);
 
-  auto var_value = frame.GetValueForVariablePath(VAR);
-  printf("Value of variable `%s` is: %s\n", VAR, var_value.GetValue());
-
   auto rng = std::make_unique<fuzzer::DefaultGeneratorRng>(seed);
   auto cfg = fuzzer::GenConfig();
   // Disable shift and division for now
@@ -84,12 +79,25 @@ void run_fuzzer(lldb::SBFrame& frame) {
   cfg.bin_op_mask.flip((size_t)fuzzer::BinOp::Div);
   cfg.bin_op_mask.flip((size_t)fuzzer::BinOp::Mod);
 
-  fuzzer::ExprGenerator gen(std::move(rng), cfg);
+  cfg.symbol_table.emplace(
+      std::make_pair(fuzzer::Type(fuzzer::ScalarType::SignedInt),
+                     std::vector<std::string>{{"x", "int_min", "int_max"}}));
+  cfg.symbol_table.emplace(
+      std::make_pair(fuzzer::Type(fuzzer::ScalarType::SignedLong),
+                     std::vector<std::string>{{"long_min", "long_max"}}));
+
+  fuzzer::ExprGenerator gen(std::move(rng), std::move(cfg));
   std::vector<std::string> exprs;
 
   size_t padding = 0;
   for (int i = 0; i < cfg.num_exprs_to_generate; i++) {
-    auto gen_expr = gen.generate();
+    auto maybe_gen_expr = gen.generate();
+    if (!maybe_gen_expr.has_value()) {
+      fprintf(stderr, "Warning: Could not generate expression #:%d\n", i);
+      continue;
+    }
+    const auto& gen_expr = maybe_gen_expr.value();
+
     std::ostringstream os;
     os << gen_expr;
     auto str = os.str();

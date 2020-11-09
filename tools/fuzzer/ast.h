@@ -30,10 +30,10 @@ namespace fuzzer {
 enum class ScalarType : unsigned char;
 class TaggedType;
 class PointerType;
-class ReferenceType;
 
-using QualifiableType = std::variant<ScalarType, TaggedType, PointerType>;
-std::ostream& operator<<(std::ostream& os, const QualifiableType& type);
+using Type = std::variant<ScalarType, TaggedType, PointerType>;
+Type clone_type(const Type& type);
+std::ostream& operator<<(std::ostream& os, const Type& type);
 
 enum class CvQualifier : unsigned char {
   EnumFirst,
@@ -47,17 +47,17 @@ using CvQualifiers = std::bitset<NUM_CV_QUALIFIERS>;
 std::ostream& operator<<(std::ostream& os, CvQualifiers qualifiers);
 
 enum class TypeKind : unsigned char {
-  ScalarType,
+  EnumFirst,
+  ScalarType = EnumFirst,
   TaggedType,
   PointerType,
-  ReferenceType,
-  EnumLast = ReferenceType,
+  EnumLast = PointerType,
 };
 inline constexpr size_t NUM_GEN_TYPE_KINDS = (size_t)TypeKind::EnumLast + 1;
 
 enum class ScalarType : unsigned char {
-  EnumMin,
-  Void = EnumMin,
+  EnumFirst,
+  Void = EnumFirst,
   Bool,
   // Have `char` explicitly because it is implementation dependent whether
   // `char` maps to `signed char` or `unsigned char`.
@@ -75,9 +75,9 @@ enum class ScalarType : unsigned char {
   Float,
   Double,
   LongDouble,
-  EnumMax = LongDouble,
+  EnumLast = LongDouble,
 };
-inline constexpr size_t NUM_SCALAR_TYPES = (size_t)ScalarType::EnumMax + 1;
+inline constexpr size_t NUM_SCALAR_TYPES = (size_t)ScalarType::EnumLast + 1;
 std::ostream& operator<<(std::ostream& os, ScalarType type);
 
 class TaggedType {
@@ -90,23 +90,28 @@ class TaggedType {
   bool operator==(const TaggedType& rhs) const;
   bool operator!=(const TaggedType& rhs) const;
 
+  TaggedType clone() const;
+
  private:
   std::string name_;
 };
 
 class QualifiedType {
  public:
-  explicit QualifiedType(QualifiableType type, CvQualifiers cv_qualifiers = 0);
+  // Allow implicit conversion for convenience
+  explicit QualifiedType(Type type, CvQualifiers cv_qualifiers = 0);
 
-  const QualifiableType& type() const;
+  const Type& type() const;
   CvQualifiers cv_qualifiers() const;
 
   friend std::ostream& operator<<(std::ostream& os, const QualifiedType& type);
-  bool operator==(const QualifiedType& type);
-  bool operator!=(const QualifiedType& type);
+  bool operator==(const QualifiedType& type) const;
+  bool operator!=(const QualifiedType& type) const;
+
+  QualifiedType clone() const;
 
  private:
-  std::unique_ptr<QualifiableType> type_;
+  std::unique_ptr<Type> type_;
   CvQualifiers cv_qualifiers_;
 };
 
@@ -117,30 +122,14 @@ class PointerType {
   const QualifiedType& type() const;
 
   friend std::ostream& operator<<(std::ostream& os, const PointerType& type);
-  bool operator==(const PointerType& type);
-  bool operator!=(const PointerType& type);
+  bool operator==(const PointerType& type) const;
+  bool operator!=(const PointerType& type) const;
+
+  PointerType clone() const;
 
  private:
   QualifiedType type_;
 };
-
-class ReferenceType {
- public:
-  explicit ReferenceType(QualifiedType type);
-
-  const QualifiedType& type() const;
-  bool can_reference_rvalue() const;
-
-  friend std::ostream& operator<<(std::ostream& os, const ReferenceType& type);
-  bool operator==(const ReferenceType& type);
-  bool operator!=(const ReferenceType& type);
-
- private:
-  QualifiedType type_;
-};
-
-using Type = std::variant<QualifiedType, ReferenceType>;
-std::ostream& operator<<(std::ostream& os, const Type& type);
 
 class BinaryExpr;
 class UnaryExpr;
@@ -197,13 +186,14 @@ enum class BinOp : unsigned char {
   EnumLast = Ge,
 };
 inline constexpr size_t NUM_BIN_OPS = (size_t)BinOp::EnumLast + 1;
+int bin_op_precedence(BinOp op);
 
 using Expr =
     std::variant<IntegerConstant, DoubleConstant, VariableExpr, UnaryExpr,
                  BinaryExpr, AddressOf, MemberOf, MemberOfPtr, ArrayIndex,
                  TernaryExpr, CastExpr, BooleanConstant, ParenthesizedExpr>;
 inline constexpr size_t NUM_EXPR_KINDS = std::variant_size_v<Expr>;
-
+void dump_expr(const Expr& expr);
 std::ostream& operator<<(std::ostream& os, const Expr& expr);
 
 class BinaryExpr {
@@ -472,10 +462,6 @@ class BooleanConstant {
   bool value_;
 };
 
-void dump_expr(const Expr& expr);
-
-int bin_op_precedence(BinOp op);
-
 }  // namespace fuzzer
 
 // Forward declarations of hash specializations
@@ -489,11 +475,6 @@ struct hash<fuzzer::PointerType> {
 template <>
 struct hash<fuzzer::QualifiedType> {
   size_t operator()(const fuzzer::QualifiedType& type) const;
-};
-
-template <>
-struct hash<fuzzer::ReferenceType> {
-  size_t operator()(const fuzzer::ReferenceType& type) const;
 };
 
 template <>

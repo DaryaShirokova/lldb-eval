@@ -26,8 +26,6 @@
 #include <utility>
 #include <variant>
 
-#include "tools/fuzzer/expr_gen.h"
-
 namespace fuzzer {
 
 struct BinOpInfo {
@@ -111,35 +109,44 @@ std::ostream& operator<<(std::ostream& os, ScalarType type) {
 
 TaggedType::TaggedType(std::string name) : name_(std::move(name)) {}
 const std::string& TaggedType::name() const { return name_; }
+TaggedType TaggedType::clone() const { return TaggedType(name_); }
 std::ostream& operator<<(std::ostream& os, const TaggedType& type) {
   return os << type.name();
+}
+bool TaggedType::operator==(const TaggedType& rhs) const {
+  return name_ == rhs.name_;
+}
+bool TaggedType::operator!=(const TaggedType& rhs) const {
+  return name_ != rhs.name_;
 }
 
 PointerType::PointerType(QualifiedType type) : type_(std::move(type)) {}
 const QualifiedType& PointerType::type() const { return type_; }
+PointerType PointerType::clone() const { return PointerType(type_.clone()); }
 std::ostream& operator<<(std::ostream& os, const PointerType& type) {
   return os << type.type() << "*";
 }
-
-ReferenceType::ReferenceType(QualifiedType type) : type_(std::move(type)) {}
-const QualifiedType& ReferenceType::type() const { return type_; }
-bool ReferenceType::can_reference_rvalue() const {
-  // C++ allows the lifetime rvalues to be extended by references that are:
-  // - const
-  // - non-volatile
-  auto qualifiers = type_.cv_qualifiers();
-  return qualifiers[(size_t)CvQualifier::Const] &&
-         !qualifiers[(size_t)CvQualifier::Volatile];
+bool PointerType::operator==(const PointerType& rhs) const {
+  return type_ == rhs.type_;
 }
-std::ostream& operator<<(std::ostream& os, const ReferenceType& type) {
-  return os << type.type() << "&";
+bool PointerType::operator!=(const PointerType& rhs) const {
+  return type_ != rhs.type_;
 }
 
-QualifiedType::QualifiedType(QualifiableType type, CvQualifiers cv_qualifiers)
-    : type_(std::make_unique<QualifiableType>(std::move(type))),
+QualifiedType::QualifiedType(Type type, CvQualifiers cv_qualifiers)
+    : type_(std::make_unique<Type>(std::move(type))),
       cv_qualifiers_(cv_qualifiers) {}
-const QualifiableType& QualifiedType::type() const { return *type_; }
+const Type& QualifiedType::type() const { return *type_; }
 CvQualifiers QualifiedType::cv_qualifiers() const { return cv_qualifiers_; }
+QualifiedType QualifiedType::clone() const {
+  return QualifiedType(clone_type(*type_), cv_qualifiers_);
+}
+bool QualifiedType::operator==(const QualifiedType& rhs) const {
+  return cv_qualifiers_ == rhs.cv_qualifiers_ && type_ == rhs.type_;
+}
+bool QualifiedType::operator!=(const QualifiedType& rhs) const {
+  return cv_qualifiers_ != rhs.cv_qualifiers_ || type_ != rhs.type_;
+}
 
 std::ostream& operator<<(std::ostream& os, const QualifiedType& type) {
   const auto& inner_type = type.type();
@@ -157,11 +164,15 @@ std::ostream& operator<<(std::ostream& os, const QualifiedType& type) {
   return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const QualifiableType& type) {
-  std::visit([&os](const auto& type) { os << type; }, type);
-  return os;
-}
+Type clone_type(const Type& type) {
+  struct CloneVisitor {
+    Type operator()(const PointerType& type) { return type.clone(); }
+    Type operator()(const TaggedType& type) { return type.clone(); }
+    Type operator()(const ScalarType& type) { return type; }
+  };
 
+  return std::visit(CloneVisitor(), type);
+}
 std::ostream& operator<<(std::ostream& os, const Type& type) {
   std::visit([&os](const auto& type) { os << type; }, type);
   return os;
@@ -541,7 +552,6 @@ namespace std {
 
 using fuzzer::PointerType;
 using fuzzer::QualifiedType;
-using fuzzer::ReferenceType;
 using fuzzer::TaggedType;
 using fuzzer::TypeKind;
 
@@ -551,10 +561,6 @@ size_t hash<PointerType>::operator()(const PointerType& type) const {
 
 size_t hash<QualifiedType>::operator()(const QualifiedType& type) const {
   return hash_combine(type.cv_qualifiers(), type.type());
-}
-
-size_t hash<ReferenceType>::operator()(const ReferenceType& type) const {
-  return hash_combine(TypeKind::ReferenceType, type.type());
 }
 
 size_t hash<TaggedType>::operator()(const TaggedType& type) const {
