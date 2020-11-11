@@ -88,8 +88,8 @@ static const char* SCALAR_TYPES_STRINGS[NUM_SCALAR_TYPES] = {
 
 std::ostream& operator<<(std::ostream& os, CvQualifiers qualifiers) {
   const char* to_print;
-  bool is_const = qualifiers[(size_t)CvQualifier::Const];
-  bool is_volatile = qualifiers[(size_t)CvQualifier::Volatile];
+  bool is_const = qualifiers[CvQualifier::Const];
+  bool is_volatile = qualifiers[CvQualifier::Volatile];
   if (is_const && is_volatile) {
     to_print = "const volatile";
   } else if (is_const) {

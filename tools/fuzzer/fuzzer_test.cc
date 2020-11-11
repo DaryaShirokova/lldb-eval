@@ -609,12 +609,6 @@ TEST_P(TypePrinting, CorrectStrType) {
 std::vector<TypePrintTestParam> gen_typing_params() {
   std::vector<TypePrintTestParam> params;
 
-  CvQualifiers const_qual;
-  const_qual.set((size_t)CvQualifier::Const);
-
-  CvQualifiers volatile_qual;
-  volatile_qual.set((size_t)CvQualifier::Volatile);
-
   {
     auto type = ScalarType::SignedInt;
     std::string str = "int";
@@ -623,7 +617,7 @@ std::vector<TypePrintTestParam> gen_typing_params() {
 
   {
     Type type(PointerType(QualifiedType(
-        PointerType(QualifiedType(ScalarType::Char, const_qual)))));
+        PointerType(QualifiedType(ScalarType::Char, CvQualifier::Const)))));
     std::string str = "const char**";
 
     params.emplace_back(std::move(str), std::move(type));
@@ -631,15 +625,16 @@ std::vector<TypePrintTestParam> gen_typing_params() {
 
   {
     PointerType type(QualifiedType(
-        PointerType(QualifiedType(ScalarType::SignedInt, const_qual)),
-        volatile_qual));
+        PointerType(QualifiedType(ScalarType::SignedInt, CvQualifier::Const)),
+        CvQualifier::Volatile));
     std::string str = "const int* volatile*";
 
     params.emplace_back(std::move(str), std::move(type));
   }
 
   {
-    PointerType type(QualifiedType(TaggedType("TestStruct"), const_qual));
+    PointerType type(
+        QualifiedType(TaggedType("TestStruct"), CvQualifier::Const));
     std::string str = "const TestStruct*";
 
     params.emplace_back(std::move(str), std::move(type));
@@ -647,7 +642,7 @@ std::vector<TypePrintTestParam> gen_typing_params() {
 
   {
     PointerType type(QualifiedType(PointerType(QualifiedType(ScalarType::Void)),
-                                   const_qual));
+                                   CvQualifier::Const));
     std::string str = "void* const*";
 
     params.emplace_back(std::move(str), std::move(type));

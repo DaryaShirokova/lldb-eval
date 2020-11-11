@@ -9,6 +9,7 @@ cc_library(
     hdrs = [
         "ast.h",
         "expr_gen.h",
+        "enum_bitset.h",
     ],
     deps = [
         "//lldb-eval:defines",

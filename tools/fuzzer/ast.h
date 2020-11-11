@@ -25,6 +25,8 @@
 #include <typeindex>  // forward references `std::hash`
 #include <variant>
 
+#include "tools/fuzzer/enum_bitset.h"
+
 namespace fuzzer {
 
 enum class ScalarType : unsigned char;
@@ -41,8 +43,7 @@ enum class CvQualifier : unsigned char {
   Volatile,
   EnumLast = Volatile,
 };
-inline constexpr size_t NUM_CV_QUALIFIERS = (size_t)CvQualifier::EnumLast + 1;
-using CvQualifiers = std::bitset<NUM_CV_QUALIFIERS>;
+using CvQualifiers = EnumBitset<CvQualifier>;
 
 std::ostream& operator<<(std::ostream& os, CvQualifiers qualifiers);
 
@@ -99,7 +100,8 @@ class TaggedType {
 class QualifiedType {
  public:
   // Allow implicit conversion for convenience
-  explicit QualifiedType(Type type, CvQualifiers cv_qualifiers = 0);
+  explicit QualifiedType(Type type,
+                         CvQualifiers cv_qualifiers = CvQualifiers());
 
   const Type& type() const;
   CvQualifiers cv_qualifiers() const;

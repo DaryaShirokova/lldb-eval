@@ -27,6 +27,7 @@
 
 #include "lldb-eval/defines.h"
 #include "tools/fuzzer/ast.h"
+#include "tools/fuzzer/enum_bitset.h"
 
 namespace fuzzer {
 
@@ -56,36 +57,58 @@ class Weights {
   std::array<float, NUM_GEN_TYPE_KINDS> type_weights_;
 };
 
-enum class AllowedTypeKind {
-  // Any integer type or any time implicitly treated as an integer type
-  // (e.g. `bool`) is allowed.
-  AnyInt,
+enum class AllowedTypeKind : unsigned char {
+  EnumFirst,
 
-  // Any type that can be implicitly treated as an integer or floating point
-  // type (e.g. `int`, `bool`, `float`) is allowed.
-  AnyFloat,
+  // The boolean type.
+  Bool = EnumFirst,
 
-  // Any type that can be used in a boolean context (i.e. the condition in an
-  // `if` or `while` statement, and all operands to the `&&`, `||` and `!`
-  // operators) is allowed.
-  AnyForBoolContext,
+  // An integer type.
+  Int,
 
-  // Any type (useful for e.g. `(void) expr`).
-  AnyType,
+  // A floating-point type.
+  Float,
+
+  // Any pointer type that can be dereferenced (i.e. `void*`, `const void*`,
+  // etc. and the `0` null pointer constant don't count).
+  Pointer,
+
+  // Any `void*` pointer or the `0` null pointer constant.
+  VoidPointerOrNullConstant,
+
+  EnumLast = VoidPointerOrNullConstant,
 };
+using AllowedTypeKinds = EnumBitset<AllowedTypeKind>;
 
-using TypeToGen = std::variant<AllowedTypeKind, Type>;
+inline AllowedTypeKinds all_in_boolean_context() {
+  return AllowedTypeKinds::all_set();
+}
+
+inline AllowedTypeKinds int_kinds() {
+  return {{AllowedTypeKind::Bool, AllowedTypeKind::Int}};
+}
+
+inline AllowedTypeKinds float_kinds() {
+  return {
+      {AllowedTypeKind::Bool, AllowedTypeKind::Int, AllowedTypeKind::Float}};
+}
+
+inline AllowedTypeKinds dereferencable_pointer_kinds() {
+  return AllowedTypeKind::Pointer;
+}
+
+using TypeToGen = std::variant<AllowedTypeKinds, Type>;
 
 class TypeConstraints {
  public:
   const TypeToGen& gen_type() const { return type_; }
   bool must_be_lvalue() const { return must_be_lvalue_; }
 
-  bool is_allowed_type_kind() const {
-    return std::holds_alternative<AllowedTypeKind>(type_);
+  bool is_allowed_type_kinds() const {
+    return std::holds_alternative<AllowedTypeKinds>(type_);
   }
-  const AllowedTypeKind* as_allowed_type_kind() const {
-    return std::get_if<AllowedTypeKind>(&type_);
+  const AllowedTypeKinds* as_allowed_type_kinds() const {
+    return std::get_if<AllowedTypeKinds>(&type_);
   }
 
   bool is_type() const { return std::holds_alternative<Type>(type_); }
@@ -308,7 +331,7 @@ std::optional<Expr> ExprGenerator::gen_boolean_constant(
     return {};
   }
 
-  if (constraints.is_allowed_type_kind() || constraints.is_scalar_type()) {
+  if (constraints.is_allowed_type_kinds() || constraints.is_scalar_type()) {
     return BooleanConstant(rng_->gen_boolean());
   }
 
@@ -325,7 +348,7 @@ std::optional<Expr> ExprGenerator::gen_integer_constant(
     return IntegerConstant(0);
   }
 
-  if (constraints.is_allowed_type_kind() || constraints.is_scalar_type()) {
+  if (constraints.is_allowed_type_kinds() || constraints.is_scalar_type()) {
     return rng_->gen_integer_constant(cfg_.int_const_min, cfg_.int_const_max);
   }
 
@@ -338,8 +361,8 @@ std::optional<Expr> ExprGenerator::gen_double_constant(
     return {};
   }
 
-  const auto* as_kind = constraints.as_allowed_type_kind();
-  if (as_kind != nullptr && *as_kind != AllowedTypeKind::AnyInt) {
+  const auto* as_kind = constraints.as_allowed_type_kinds();
+  if (as_kind != nullptr && (*as_kind)[AllowedTypeKind::Float]) {
     return rng_->gen_double_constant(cfg_.double_constant_min,
                                      cfg_.double_constant_max);
   }
@@ -436,19 +459,17 @@ std::optional<Expr> ExprGenerator::gen_unary_expr(
     return {};
   }
 
-  static constexpr UnOpMask int_only_mask = 1ull << (size_t)UnOp::BitNot;
   auto mask = cfg_.un_op_mask;
-
-  const auto* as_kind = constraints.as_allowed_type_kind();
-  if (as_kind != nullptr && *as_kind != AllowedTypeKind::AnyInt) {
-    mask &= ~int_only_mask;
+  const auto* as_kind = constraints.as_allowed_type_kinds();
+  if (as_kind != nullptr && (*as_kind)[AllowedTypeKind::Float]) {
+    mask[UnOp::BitNot] = false;
   }
 
   const auto* as_scalar = constraints.as_scalar_type();
   if (as_scalar != nullptr && *as_scalar != ScalarType::Float &&
       *as_scalar != ScalarType::Double &&
       *as_scalar != ScalarType::LongDouble) {
-    mask &= ~int_only_mask;
+    mask[UnOp::BitNot] = false;
   }
 
   auto maybe_expr = gen_with_weights(weights, constraints);
@@ -467,8 +488,8 @@ std::optional<Expr> ExprGenerator::gen_unary_expr(
 
 std::optional<Expr> ExprGenerator::gen_ternary_expr(
     const Weights& weights, const TypeConstraints& constraints) {
-  auto maybe_cond = gen_with_weights(
-      weights, TypeConstraints(AllowedTypeKind::AnyForBoolContext));
+  auto maybe_cond =
+      gen_with_weights(weights, TypeConstraints(all_in_boolean_context()));
   if (!maybe_cond.has_value()) {
     return {};
   }
@@ -495,7 +516,7 @@ std::optional<Expr> ExprGenerator::gen_ternary_expr(
 
 std::optional<Expr> ExprGenerator::gen_cast_expr(
     const Weights& weights, const TypeConstraints& constraints) {
-  TypeConstraints new_constraints(AllowedTypeKind::AnyType);
+  TypeConstraints new_constraints(all_in_boolean_context());
 
   auto maybe_type = gen_type(weights, constraints);
   if (!maybe_type.has_value()) {
@@ -567,7 +588,7 @@ std::optional<Expr> ExprGenerator::gen_member_of_ptr_expr(
 
 std::optional<Expr> ExprGenerator::gen_array_index_expr(
     const Weights& weights, const TypeConstraints& constraints) {
-  TypeConstraints idx_constraints(AllowedTypeKind::AnyInt);
+  TypeConstraints idx_constraints(int_kinds());
 
   auto maybe_expr = gen_with_weights(weights, constraints);
   if (!maybe_expr.has_value()) {
@@ -592,7 +613,7 @@ std::optional<Expr> ExprGenerator::gen_with_weights(
     const Weights& weights, const TypeConstraints& constraints) {
   Weights new_weights = weights;
 
-  ExprKindMask mask = ~0llu;
+  ExprKindMask mask = ExprKindMask::all_set();
 
   while (mask.any()) {
     auto kind = rng_->gen_expr_kind(new_weights, mask);
@@ -678,7 +699,7 @@ std::optional<Type> ExprGenerator::gen_type(
     const Weights& weights, const TypeConstraints& constraints) {
   Weights new_weights = weights;
 
-  TypeKindMask mask = ~0llu;
+  TypeKindMask mask = TypeKindMask::all_set();
 
   while (mask.any()) {
     auto choice = rng_->gen_type_kind(new_weights, mask);
@@ -762,11 +783,11 @@ std::optional<Expr> ExprGenerator::generate() {
     type_weights[i] = cfg_.type_kind_weights[i].initial_weight;
   }
 
-  return gen_with_weights(weights, TypeConstraints(AllowedTypeKind::AnyType));
+  return gen_with_weights(weights, TypeConstraints(all_in_boolean_context()));
 }
 
-template <size_t N, typename Rng>
-size_t pick_nth_set_bit(std::bitset<N> mask, Rng& rng) {
+template <typename Enum, typename Rng>
+Enum pick_nth_set_bit(const EnumBitset<Enum> mask, Rng& rng) {
   // At least one bit needs to be set
   assert(mask.any() && "Mask must not be empty");
 
@@ -780,7 +801,7 @@ size_t pick_nth_set_bit(std::bitset<N> mask, Rng& rng) {
     }
 
     if (running_ones == choice) {
-      return i;
+      return (Enum)i;
     }
   }
 
@@ -791,10 +812,10 @@ size_t pick_nth_set_bit(std::bitset<N> mask, Rng& rng) {
   lldb_eval_unreachable("Mask has no bits set");
 }
 
-template <size_t N, typename Rng, typename RealType>
-size_t weighted_pick(const std::array<RealType, N>& array,
-                     const std::bitset<N>& mask, Rng& rng) {
-  static_assert(N != 0, "Array must have at least 1 element");
+template <typename Enum, typename Rng, typename RealType>
+Enum weighted_pick(
+    const std::array<RealType, (size_t)Enum::EnumLast + 1>& array,
+    const EnumBitset<Enum>& mask, Rng& rng) {
   static_assert(std::is_floating_point_v<RealType>,
                 "Must be a floating point type");
 
@@ -810,20 +831,20 @@ size_t weighted_pick(const std::array<RealType, N>& array,
   for (size_t i = 0; i < array.size(); i++) {
     running_sum += mask[i] ? array[i] : 0;
     if (choice < running_sum) {
-      return i;
+      return (Enum)i;
     }
   }
 
   // Just in case we get here due to e.g. floating point inaccuracies, etc.
-  return array.size() - 1;
+  return Enum::EnumLast;
 }
 
 BinOp DefaultGeneratorRng::gen_bin_op(BinOpMask mask) {
-  return (BinOp)pick_nth_set_bit(mask, rng_);
+  return pick_nth_set_bit(mask, rng_);
 }
 
 UnOp DefaultGeneratorRng::gen_un_op(UnOpMask mask) {
-  return (UnOp)pick_nth_set_bit(mask, rng_);
+  return pick_nth_set_bit(mask, rng_);
 }
 
 IntegerConstant DefaultGeneratorRng::gen_integer_constant(uint64_t min,
@@ -874,13 +895,9 @@ CvQualifiers DefaultGeneratorRng::gen_cv_qualifiers(float const_prob,
   std::bernoulli_distribution const_distr(const_prob);
   std::bernoulli_distribution volatile_distr(volatile_prob);
 
-  CvQualifiers retval = 0;
-  if (const_distr(rng_)) {
-    retval.set((size_t)CvQualifier::Const);
-  }
-  if (volatile_distr(rng_)) {
-    retval.set((size_t)CvQualifier::Volatile);
-  }
+  CvQualifiers retval;
+  retval[CvQualifier::Const] = const_distr(rng_);
+  retval[CvQualifier::Volatile] = volatile_distr(rng_);
 
   return retval;
 }
@@ -897,12 +914,12 @@ bool DefaultGeneratorRng::gen_boolean() {
 
 ExprKind DefaultGeneratorRng::gen_expr_kind(const Weights& weights,
                                             const ExprKindMask& mask) {
-  return (ExprKind)weighted_pick(weights.expr_weights(), mask, rng_);
+  return weighted_pick(weights.expr_weights(), mask, rng_);
 }
 
 TypeKind DefaultGeneratorRng::gen_type_kind(const Weights& weights,
                                             const TypeKindMask& mask) {
-  return (TypeKind)weighted_pick(weights.type_weights(), mask, rng_);
+  return weighted_pick(weights.type_weights(), mask, rng_);
 }
 
 ScalarType DefaultGeneratorRng::gen_scalar_type() {

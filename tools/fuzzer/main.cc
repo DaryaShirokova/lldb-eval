@@ -74,10 +74,10 @@ void run_fuzzer(lldb::SBFrame& frame) {
   auto rng = std::make_unique<fuzzer::DefaultGeneratorRng>(seed);
   auto cfg = fuzzer::GenConfig();
   // Disable shift and division for now
-  cfg.bin_op_mask.flip((size_t)fuzzer::BinOp::Shl);
-  cfg.bin_op_mask.flip((size_t)fuzzer::BinOp::Shr);
-  cfg.bin_op_mask.flip((size_t)fuzzer::BinOp::Div);
-  cfg.bin_op_mask.flip((size_t)fuzzer::BinOp::Mod);
+  cfg.bin_op_mask[fuzzer::BinOp::Shl] = false;
+  cfg.bin_op_mask[fuzzer::BinOp::Shr] = false;
+  cfg.bin_op_mask[fuzzer::BinOp::Div] = false;
+  cfg.bin_op_mask[fuzzer::BinOp::Mod] = false;
 
   cfg.symbol_table.emplace(
       std::make_pair(fuzzer::Type(fuzzer::ScalarType::SignedInt),

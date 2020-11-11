@@ -18,7 +18,6 @@
 #define INCLUDE_EXPR_GEN_H
 
 #include <array>
-#include <bitset>
 #include <cstdint>
 #include <optional>
 #include <random>
@@ -44,10 +43,9 @@ enum class ExprKind : unsigned char {
   CastExpr,
   EnumLast = CastExpr,
 };
-inline constexpr size_t NUM_GEN_EXPR_KINDS = (size_t)ExprKind::EnumLast + 1;
 
-using ExprKindMask = std::bitset<NUM_GEN_EXPR_KINDS>;
-using TypeKindMask = std::bitset<NUM_GEN_TYPE_KINDS>;
+using ExprKindMask = EnumBitset<ExprKind>;
+using TypeKindMask = EnumBitset<TypeKind>;
 
 class Weights;
 class TypeConstraints;
@@ -62,8 +60,8 @@ struct TypeKindWeightInfo {
   float dampening_factor;
 };
 
-using BinOpMask = std::bitset<NUM_BIN_OPS>;
-using UnOpMask = std::bitset<NUM_UN_OPS>;
+using BinOpMask = EnumBitset<BinOp>;
+using UnOpMask = EnumBitset<UnOp>;
 
 struct GenConfig {
   int num_exprs_to_generate = 20;
@@ -79,8 +77,8 @@ struct GenConfig {
   float const_prob = 0.3f;
   float volatile_prob = 0.05f;
 
-  BinOpMask bin_op_mask = ~0ull;
-  UnOpMask un_op_mask = ~0ull;
+  BinOpMask bin_op_mask = BinOpMask::all_set();
+  UnOpMask un_op_mask = UnOpMask::all_set();
 
   std::array<ExprKindWeightInfo, NUM_EXPR_KINDS> expr_kind_weights = {{
       {1.0f, 0.0f},  // ExprKind::IntegerConstant
