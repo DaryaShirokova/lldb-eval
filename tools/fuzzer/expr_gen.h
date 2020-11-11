@@ -40,9 +40,11 @@ enum class ExprKind : unsigned char {
   ArrayIndex,
   TernaryExpr,
   BooleanConstant,
+  DereferenceExpr,
   CastExpr,
   EnumLast = CastExpr,
 };
+inline constexpr size_t NUM_GEN_EXPR_KINDS = (size_t)ExprKind::EnumLast + 1;
 
 using ExprKindMask = EnumBitset<ExprKind>;
 using TypeKindMask = EnumBitset<TypeKind>;
@@ -80,7 +82,7 @@ struct GenConfig {
   BinOpMask bin_op_mask = BinOpMask::all_set();
   UnOpMask un_op_mask = UnOpMask::all_set();
 
-  std::array<ExprKindWeightInfo, NUM_EXPR_KINDS> expr_kind_weights = {{
+  std::array<ExprKindWeightInfo, NUM_GEN_EXPR_KINDS> expr_kind_weights = {{
       {1.0f, 0.0f},  // ExprKind::IntegerConstant
       {2.0f, 0.0f},  // ExprKind::DoubleConstant
       {1.0f, 0.0f},  // ExprKind::VariableExpr
@@ -91,6 +93,7 @@ struct GenConfig {
       {1.0f, 0.1f},  // ExprKind::MemberOfPtr
       {1.0f, 0.1f},  // ExprKind::ArrayIndex
       {2.0f, 0.1f},  // ExprKind::TernaryExpr
+      {1.0f, 0.1f},  // ExprKind::DereferenceExpr
       {1.0f, 0.0f},  // ExprKind::BooleanConstant
       {1.0f, 0.4f},  // ExprKind::CastExpr
   }};
@@ -167,6 +170,8 @@ class ExprGenerator {
                                        const TypeConstraints& constraints);
   std::optional<Expr> gen_cast_expr(const Weights& weights,
                                     const TypeConstraints& constraints);
+  std::optional<Expr> gen_dereference_expr(const Weights& weights,
+                                           const TypeConstraints& constraints);
   std::optional<Expr> gen_address_of_expr(const Weights& weights,
                                           const TypeConstraints& constraints);
   std::optional<Expr> gen_member_of_expr(const Weights& weights,

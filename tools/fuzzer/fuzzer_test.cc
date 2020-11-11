@@ -181,6 +181,11 @@ class FakeGeneratorRng : public GeneratorRng {
     std::visit(*this, e.expr());
   }
 
+  void operator()(const DereferenceExpr& e) {
+    expr_kinds_.push_back(ExprKind::DereferenceExpr);
+    std::visit(*this, e.expr());
+  }
+
   void operator()(const QualifiedType& e) {
     cv_qualifiers_.push_back(e.cv_qualifiers());
     std::visit(*this, e.type());
@@ -258,6 +263,10 @@ class AstComparator {
     if (lhs.value() != rhs.value()) {
       add_mismatch(lhs, rhs);
     }
+  }
+
+  void operator()(const DereferenceExpr& lhs, const DereferenceExpr& rhs) {
+    std::visit(*this, lhs.expr(), rhs.expr());
   }
 
   void operator()(const ParenthesizedExpr& lhs, const ParenthesizedExpr& rhs) {

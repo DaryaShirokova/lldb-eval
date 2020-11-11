@@ -145,6 +145,7 @@ class MemberOfPtr;
 class ArrayIndex;
 class TernaryExpr;
 class CastExpr;
+class DereferenceExpr;
 class BooleanConstant;
 
 enum class UnOp : unsigned char {
@@ -190,10 +191,10 @@ enum class BinOp : unsigned char {
 inline constexpr size_t NUM_BIN_OPS = (size_t)BinOp::EnumLast + 1;
 int bin_op_precedence(BinOp op);
 
-using Expr =
-    std::variant<IntegerConstant, DoubleConstant, VariableExpr, UnaryExpr,
-                 BinaryExpr, AddressOf, MemberOf, MemberOfPtr, ArrayIndex,
-                 TernaryExpr, CastExpr, BooleanConstant, ParenthesizedExpr>;
+using Expr = std::variant<IntegerConstant, DoubleConstant, VariableExpr,
+                          UnaryExpr, BinaryExpr, AddressOf, MemberOf,
+                          MemberOfPtr, ArrayIndex, TernaryExpr, CastExpr,
+                          DereferenceExpr, BooleanConstant, ParenthesizedExpr>;
 inline constexpr size_t NUM_EXPR_KINDS = std::variant_size_v<Expr>;
 void dump_expr(const Expr& expr);
 std::ostream& operator<<(std::ostream& os, const Expr& expr);
@@ -445,6 +446,21 @@ class CastExpr {
 
  private:
   Type type_;
+  std::unique_ptr<Expr> expr_;
+};
+
+class DereferenceExpr {
+ public:
+  static constexpr int PRECEDENCE = 3;
+
+  explicit DereferenceExpr(Expr expr);
+  const Expr& expr() const;
+  int precedence() const { return PRECEDENCE; }
+
+  friend std::ostream& operator<<(std::ostream& os,
+                                  const DereferenceExpr& expr);
+
+ private:
   std::unique_ptr<Expr> expr_;
 };
 

@@ -609,6 +609,21 @@ std::optional<Expr> ExprGenerator::gen_array_index_expr(
   return ArrayIndex(std::move(expr), std::move(idx));
 }
 
+std::optional<Expr> ExprGenerator::gen_dereference_expr(
+    const Weights& weights, const TypeConstraints& constraints) {
+  auto maybe_expr = gen_with_weights(weights, constraints);
+  if (!maybe_expr.has_value()) {
+    return {};
+  }
+  auto& expr = maybe_expr.value();
+
+  if (expr_precedence(expr) > DereferenceExpr::PRECEDENCE) {
+    expr = ParenthesizedExpr(std::move(expr));
+  }
+
+  return DereferenceExpr(std::move(expr));
+}
+
 std::optional<Expr> ExprGenerator::gen_with_weights(
     const Weights& weights, const TypeConstraints& constraints) {
   Weights new_weights = weights;
@@ -653,6 +668,10 @@ std::optional<Expr> ExprGenerator::gen_with_weights(
 
       case ExprKind::CastExpr:
         maybe_expr = gen_cast_expr(new_weights, constraints);
+        break;
+
+      case ExprKind::DereferenceExpr:
+        maybe_expr = gen_dereference_expr(new_weights, constraints);
         break;
 
       case ExprKind::AddressOf:

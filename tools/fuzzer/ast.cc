@@ -375,6 +375,13 @@ std::ostream& operator<<(std::ostream& os, const CastExpr& e) {
   return os << "(" << e.type() << ") " << e.expr();
 }
 
+DereferenceExpr::DereferenceExpr(Expr expr)
+    : expr_(std::make_unique<Expr>(std::move(expr))) {}
+const Expr& DereferenceExpr::expr() const { return *expr_; }
+std::ostream& operator<<(std::ostream& os, const DereferenceExpr& expr) {
+  return os << "*" << expr.expr();
+}
+
 std::ostream& operator<<(std::ostream& os, const BooleanConstant& expr) {
   const char* to_print = expr.value() ? "true" : "false";
   return os << to_print;
@@ -492,6 +499,12 @@ class ExprDumper {
     os << e.type();
     printf("Cast expression into type: `%s`\n", os.str().c_str());
 
+    indented_visit(e.expr());
+  }
+
+  void operator()(const DereferenceExpr& e) {
+    emit_marked_indentation();
+    printf("Dereference:\n");
     indented_visit(e.expr());
   }
 
