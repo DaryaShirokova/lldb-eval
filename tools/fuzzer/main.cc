@@ -81,15 +81,14 @@ void run_fuzzer(lldb::SBFrame& frame) {
 
   cfg.symbol_table.emplace(
       std::make_pair(fuzzer::Type(fuzzer::ScalarType::SignedInt),
-                     std::vector<std::string>{{"x", "int_min", "int_max"}}));
+                     std::vector<std::string>{"x", "int_min", "int_max"}));
   cfg.symbol_table.emplace(
       std::make_pair(fuzzer::Type(fuzzer::ScalarType::SignedLong),
-                     std::vector<std::string>{{"long_min", "long_max"}}));
+                     std::vector<std::string>{"long_min", "long_max"}));
 
   fuzzer::ExprGenerator gen(std::move(rng), std::move(cfg));
   std::vector<std::string> exprs;
 
-  size_t padding = 0;
   for (int i = 0; i < cfg.num_exprs_to_generate; i++) {
     auto maybe_gen_expr = gen.generate();
     if (!maybe_gen_expr.has_value()) {
@@ -102,20 +101,25 @@ void run_fuzzer(lldb::SBFrame& frame) {
     os << gen_expr;
     auto str = os.str();
 
-    padding = std::max(padding, str.size());
     exprs.emplace_back(std::move(str));
   }
 
   for (const auto& e : exprs) {
     auto lldb_value = frame.EvaluateExpression(e.c_str());
-    printf("lldb:      `%-*s` yields: `%s`\n", (int)padding, e.c_str(),
-           lldb_value.GetValue());
+    auto lldb_err = lldb_value.GetError();
+    printf("expr: `%s`\n", e.c_str());
+    printf("lldb:      `%s`\n", lldb_value.GetValue());
 
-    lldb::SBError err;
-    auto lldb_eval_value = lldb_eval::EvaluateExpression(frame, e.c_str(), err);
-    printf("lldb-eval: `%-*s` yields: `%s`\n", (int)padding, e.c_str(),
-           lldb_eval_value.GetValue());
-    printf("------------------------------------------------------------\n");
+    lldb::SBError lldb_eval_err;
+    auto lldb_eval_value =
+        lldb_eval::EvaluateExpression(frame, e.c_str(), lldb_eval_err);
+    printf("lldb-eval: `%s`\n", lldb_eval_value.GetValue());
+    printf("======\n");
+
+    printf("lldb error:      `%s`\n", lldb_err.GetCString());
+    printf("lldb-eval error: `%s`\n", lldb_eval_err.GetCString());
+
+    printf("============================================================\n");
   }
 }
 

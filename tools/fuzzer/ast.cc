@@ -109,7 +109,6 @@ std::ostream& operator<<(std::ostream& os, ScalarType type) {
 
 TaggedType::TaggedType(std::string name) : name_(std::move(name)) {}
 const std::string& TaggedType::name() const { return name_; }
-TaggedType TaggedType::clone() const { return TaggedType(name_); }
 std::ostream& operator<<(std::ostream& os, const TaggedType& type) {
   return os << type.name();
 }
@@ -122,7 +121,6 @@ bool TaggedType::operator!=(const TaggedType& rhs) const {
 
 PointerType::PointerType(QualifiedType type) : type_(std::move(type)) {}
 const QualifiedType& PointerType::type() const { return type_; }
-PointerType PointerType::clone() const { return PointerType(type_.clone()); }
 std::ostream& operator<<(std::ostream& os, const PointerType& type) {
   return os << type.type() << "*";
 }
@@ -134,13 +132,10 @@ bool PointerType::operator!=(const PointerType& rhs) const {
 }
 
 QualifiedType::QualifiedType(Type type, CvQualifiers cv_qualifiers)
-    : type_(std::make_unique<Type>(std::move(type))),
+    : type_(std::make_shared<Type>(std::move(type))),
       cv_qualifiers_(cv_qualifiers) {}
 const Type& QualifiedType::type() const { return *type_; }
 CvQualifiers QualifiedType::cv_qualifiers() const { return cv_qualifiers_; }
-QualifiedType QualifiedType::clone() const {
-  return QualifiedType(clone_type(*type_), cv_qualifiers_);
-}
 bool QualifiedType::operator==(const QualifiedType& rhs) const {
   return cv_qualifiers_ == rhs.cv_qualifiers_ && type_ == rhs.type_;
 }
@@ -164,23 +159,14 @@ std::ostream& operator<<(std::ostream& os, const QualifiedType& type) {
   return os;
 }
 
-Type clone_type(const Type& type) {
-  struct CloneVisitor {
-    Type operator()(const PointerType& type) { return type.clone(); }
-    Type operator()(const TaggedType& type) { return type.clone(); }
-    Type operator()(const ScalarType& type) { return type; }
-  };
-
-  return std::visit(CloneVisitor(), type);
-}
 std::ostream& operator<<(std::ostream& os, const Type& type) {
   std::visit([&os](const auto& type) { os << type; }, type);
   return os;
 }
 
 BinaryExpr::BinaryExpr(Expr lhs, BinOp op, Expr rhs)
-    : lhs_(std::make_unique<Expr>(std::move(lhs))),
-      rhs_(std::make_unique<Expr>(std::move(rhs))),
+    : lhs_(std::make_shared<Expr>(std::move(lhs))),
+      rhs_(std::make_shared<Expr>(std::move(rhs))),
       op_(op) {}
 const Expr& BinaryExpr::lhs() const { return *lhs_; }
 const Expr& BinaryExpr::rhs() const { return *rhs_; }
@@ -200,7 +186,7 @@ std::ostream& operator<<(std::ostream& os, const VariableExpr& e) {
 }
 
 UnaryExpr::UnaryExpr(UnOp op, Expr expr)
-    : expr_(std::make_unique<Expr>(std::move(expr))), op_(op) {}
+    : expr_(std::make_shared<Expr>(std::move(expr))), op_(op) {}
 UnOp UnaryExpr::op() const { return op_; }
 const Expr& UnaryExpr::expr() const { return *expr_; }
 std::ostream& operator<<(std::ostream& os, const UnaryExpr& e) {
@@ -310,14 +296,14 @@ std::ostream& operator<<(std::ostream& os, const DoubleConstant& e) {
 }
 
 ParenthesizedExpr::ParenthesizedExpr(Expr expr)
-    : expr_(std::make_unique<Expr>(std::move(expr))) {}
+    : expr_(std::make_shared<Expr>(std::move(expr))) {}
 const Expr& ParenthesizedExpr::expr() const { return *expr_; }
 std::ostream& operator<<(std::ostream& os, const ParenthesizedExpr& e) {
   return os << "(" << e.expr() << ")";
 }
 
 AddressOf::AddressOf(Expr expr)
-    : expr_(std::make_unique<Expr>(std::move(expr))) {}
+    : expr_(std::make_shared<Expr>(std::move(expr))) {}
 const Expr& AddressOf::expr() const { return *expr_; }
 std::ostream& operator<<(std::ostream& os, const AddressOf& e) {
   os << "&";
@@ -329,7 +315,7 @@ std::ostream& operator<<(std::ostream& os, const AddressOf& e) {
 }
 
 MemberOf::MemberOf(Expr expr, std::string field)
-    : expr_(std::make_unique<Expr>(std::move(expr))),
+    : expr_(std::make_shared<Expr>(std::move(expr))),
       field_(std::move(field)) {}
 const Expr& MemberOf::expr() const { return *expr_; }
 const std::string& MemberOf::field() const { return field_; }
@@ -338,7 +324,7 @@ std::ostream& operator<<(std::ostream& os, const MemberOf& e) {
 }
 
 MemberOfPtr::MemberOfPtr(Expr expr, std::string field)
-    : expr_(std::make_unique<Expr>(std::move(expr))),
+    : expr_(std::make_shared<Expr>(std::move(expr))),
       field_(std::move(field)) {}
 const Expr& MemberOfPtr::expr() const { return *expr_; }
 const std::string& MemberOfPtr::field() const { return field_; }
@@ -347,8 +333,8 @@ std::ostream& operator<<(std::ostream& os, const MemberOfPtr& e) {
 }
 
 ArrayIndex::ArrayIndex(Expr expr, Expr idx)
-    : expr_(std::make_unique<Expr>(std::move(expr))),
-      idx_(std::make_unique<Expr>(std::move(idx))) {}
+    : expr_(std::make_shared<Expr>(std::move(expr))),
+      idx_(std::make_shared<Expr>(std::move(idx))) {}
 const Expr& ArrayIndex::expr() const { return *expr_; }
 const Expr& ArrayIndex::idx() const { return *idx_; }
 std::ostream& operator<<(std::ostream& os, const ArrayIndex& e) {
@@ -356,9 +342,9 @@ std::ostream& operator<<(std::ostream& os, const ArrayIndex& e) {
 }
 
 TernaryExpr::TernaryExpr(Expr cond, Expr lhs, Expr rhs)
-    : cond_(std::make_unique<Expr>(std::move(cond))),
-      lhs_(std::make_unique<Expr>(std::move(lhs))),
-      rhs_(std::make_unique<Expr>(std::move(rhs))) {}
+    : cond_(std::make_shared<Expr>(std::move(cond))),
+      lhs_(std::make_shared<Expr>(std::move(lhs))),
+      rhs_(std::make_shared<Expr>(std::move(rhs))) {}
 const Expr& TernaryExpr::cond() const { return *cond_; }
 const Expr& TernaryExpr::lhs() const { return *lhs_; }
 const Expr& TernaryExpr::rhs() const { return *rhs_; }
@@ -367,7 +353,7 @@ std::ostream& operator<<(std::ostream& os, const TernaryExpr& e) {
 }
 
 CastExpr::CastExpr(Type type, Expr expr)
-    : type_(std::move(type)), expr_(std::make_unique<Expr>(std::move(expr))) {}
+    : type_(std::move(type)), expr_(std::make_shared<Expr>(std::move(expr))) {}
 
 const Type& CastExpr::type() const { return type_; }
 const Expr& CastExpr::expr() const { return *expr_; }
@@ -376,7 +362,7 @@ std::ostream& operator<<(std::ostream& os, const CastExpr& e) {
 }
 
 DereferenceExpr::DereferenceExpr(Expr expr)
-    : expr_(std::make_unique<Expr>(std::move(expr))) {}
+    : expr_(std::make_shared<Expr>(std::move(expr))) {}
 const Expr& DereferenceExpr::expr() const { return *expr_; }
 std::ostream& operator<<(std::ostream& os, const DereferenceExpr& expr) {
   return os << "*" << expr.expr();

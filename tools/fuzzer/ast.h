@@ -34,7 +34,6 @@ class TaggedType;
 class PointerType;
 
 using Type = std::variant<ScalarType, TaggedType, PointerType>;
-Type clone_type(const Type& type);
 std::ostream& operator<<(std::ostream& os, const Type& type);
 
 enum class CvQualifier : unsigned char {
@@ -81,8 +80,16 @@ enum class ScalarType : unsigned char {
 inline constexpr size_t NUM_SCALAR_TYPES = (size_t)ScalarType::EnumLast + 1;
 std::ostream& operator<<(std::ostream& os, ScalarType type);
 
+inline constexpr bool is_int_scalar_type(ScalarType type) {
+  return ScalarType::Bool <= type && type <= ScalarType::UnsignedLongLong;
+}
+inline constexpr bool is_float_scalar_type(ScalarType type) {
+  return ScalarType::Float <= type && type <= ScalarType::LongDouble;
+}
+
 class TaggedType {
  public:
+  TaggedType() = default;
   explicit TaggedType(std::string name);
 
   const std::string& name() const;
@@ -91,15 +98,13 @@ class TaggedType {
   bool operator==(const TaggedType& rhs) const;
   bool operator!=(const TaggedType& rhs) const;
 
-  TaggedType clone() const;
-
  private:
   std::string name_;
 };
 
 class QualifiedType {
  public:
-  // Allow implicit conversion for convenience
+  QualifiedType() = default;
   explicit QualifiedType(Type type,
                          CvQualifiers cv_qualifiers = CvQualifiers());
 
@@ -110,15 +115,14 @@ class QualifiedType {
   bool operator==(const QualifiedType& type) const;
   bool operator!=(const QualifiedType& type) const;
 
-  QualifiedType clone() const;
-
  private:
-  std::unique_ptr<Type> type_;
+  std::shared_ptr<Type> type_;
   CvQualifiers cv_qualifiers_;
 };
 
 class PointerType {
  public:
+  PointerType() = default;
   explicit PointerType(QualifiedType type);
 
   const QualifiedType& type() const;
@@ -126,8 +130,6 @@ class PointerType {
   friend std::ostream& operator<<(std::ostream& os, const PointerType& type);
   bool operator==(const PointerType& type) const;
   bool operator!=(const PointerType& type) const;
-
-  PointerType clone() const;
 
  private:
   QualifiedType type_;
@@ -201,6 +203,7 @@ std::ostream& operator<<(std::ostream& os, const Expr& expr);
 
 class BinaryExpr {
  public:
+  BinaryExpr() = default;
   BinaryExpr(Expr lhs, BinOp op, Expr rhs);
 
   const Expr& lhs() const;
@@ -211,15 +214,16 @@ class BinaryExpr {
   friend std::ostream& operator<<(std::ostream& os, const BinaryExpr& expr);
 
  private:
-  std::unique_ptr<Expr> lhs_;
-  std::unique_ptr<Expr> rhs_;
-  BinOp op_;
+  std::shared_ptr<Expr> lhs_;
+  std::shared_ptr<Expr> rhs_;
+  BinOp op_ = BinOp::Plus;  // Just pick one for the default ctor
 };
 
 class UnaryExpr {
  public:
   static constexpr int PRECEDENCE = 3;
 
+  UnaryExpr() = default;
   UnaryExpr(UnOp op, Expr expr);
 
   UnOp op() const;
@@ -229,14 +233,15 @@ class UnaryExpr {
   friend std::ostream& operator<<(std::ostream& os, const UnaryExpr& expr);
 
  private:
-  std::unique_ptr<Expr> expr_;
-  UnOp op_;
+  std::shared_ptr<Expr> expr_;
+  UnOp op_ = UnOp::Plus;  // Just pick one for the default ctor
 };
 
 class VariableExpr {
  public:
   static constexpr int PRECEDENCE = 0;
 
+  VariableExpr() = default;
   explicit VariableExpr(std::string name);
 
   const std::string& name() const;
@@ -275,6 +280,7 @@ class IntegerConstant {
 
   static constexpr int PRECEDENCE = 0;
 
+  IntegerConstant() = default;
   explicit IntegerConstant(uint64_t value) : value_(value) {}
   IntegerConstant(uint64_t value, Base base, Length length,
                   Signedness signedness)
@@ -316,6 +322,7 @@ class DoubleConstant {
 
   static constexpr int PRECEDENCE = 0;
 
+  DoubleConstant() = default;
   explicit DoubleConstant(double value) : value_(value) {}
   DoubleConstant(double value, Format format, Length length)
       : value_(value), format_(format), length_(length) {}
@@ -335,6 +342,7 @@ class ParenthesizedExpr {
  public:
   static constexpr int PRECEDENCE = 0;
 
+  ParenthesizedExpr() = default;
   explicit ParenthesizedExpr(Expr expr);
 
   const Expr& expr() const;
@@ -344,13 +352,14 @@ class ParenthesizedExpr {
                                   const ParenthesizedExpr& expr);
 
  private:
-  std::unique_ptr<Expr> expr_;
+  std::shared_ptr<Expr> expr_;
 };
 
 class AddressOf {
  public:
   static constexpr int PRECEDENCE = 3;
 
+  AddressOf() = default;
   explicit AddressOf(Expr expr);
 
   const Expr& expr() const;
@@ -359,13 +368,14 @@ class AddressOf {
   friend std::ostream& operator<<(std::ostream& os, const AddressOf& expr);
 
  private:
-  std::unique_ptr<Expr> expr_;
+  std::shared_ptr<Expr> expr_;
 };
 
 class MemberOf {
  public:
   static constexpr int PRECEDENCE = 2;
 
+  MemberOf() = default;
   MemberOf(Expr expr, std::string field);
 
   const Expr& expr() const;
@@ -375,7 +385,7 @@ class MemberOf {
   friend std::ostream& operator<<(std::ostream& os, const MemberOf& expr);
 
  private:
-  std::unique_ptr<Expr> expr_;
+  std::shared_ptr<Expr> expr_;
   std::string field_;
 };
 
@@ -383,6 +393,7 @@ class MemberOfPtr {
  public:
   static constexpr int PRECEDENCE = 2;
 
+  MemberOfPtr() = default;
   MemberOfPtr(Expr expr, std::string field);
 
   const Expr& expr() const;
@@ -392,7 +403,7 @@ class MemberOfPtr {
   friend std::ostream& operator<<(std::ostream& os, const MemberOfPtr& expr);
 
  private:
-  std::unique_ptr<Expr> expr_;
+  std::shared_ptr<Expr> expr_;
   std::string field_;
 };
 
@@ -400,6 +411,7 @@ class ArrayIndex {
  public:
   static constexpr int PRECEDENCE = 2;
 
+  ArrayIndex() = default;
   ArrayIndex(Expr expr, Expr idx);
 
   const Expr& expr() const;
@@ -409,14 +421,15 @@ class ArrayIndex {
   friend std::ostream& operator<<(std::ostream& os, const ArrayIndex& expr);
 
  private:
-  std::unique_ptr<Expr> expr_;
-  std::unique_ptr<Expr> idx_;
+  std::shared_ptr<Expr> expr_;
+  std::shared_ptr<Expr> idx_;
 };
 
 class TernaryExpr {
  public:
   static constexpr int PRECEDENCE = 16;
 
+  TernaryExpr() = default;
   TernaryExpr(Expr cond, Expr lhs, Expr rhs);
 
   const Expr& cond() const;
@@ -427,15 +440,16 @@ class TernaryExpr {
   friend std::ostream& operator<<(std::ostream& os, const TernaryExpr& expr);
 
  private:
-  std::unique_ptr<Expr> cond_;
-  std::unique_ptr<Expr> lhs_;
-  std::unique_ptr<Expr> rhs_;
+  std::shared_ptr<Expr> cond_;
+  std::shared_ptr<Expr> lhs_;
+  std::shared_ptr<Expr> rhs_;
 };
 
 class CastExpr {
  public:
   static constexpr int PRECEDENCE = 2;
 
+  CastExpr() = default;
   CastExpr(Type type, Expr expr);
 
   const Type& type() const;
@@ -446,14 +460,16 @@ class CastExpr {
 
  private:
   Type type_;
-  std::unique_ptr<Expr> expr_;
+  std::shared_ptr<Expr> expr_;
 };
 
 class DereferenceExpr {
  public:
   static constexpr int PRECEDENCE = 3;
 
+  DereferenceExpr() = default;
   explicit DereferenceExpr(Expr expr);
+
   const Expr& expr() const;
   int precedence() const { return PRECEDENCE; }
 
@@ -461,13 +477,14 @@ class DereferenceExpr {
                                   const DereferenceExpr& expr);
 
  private:
-  std::unique_ptr<Expr> expr_;
+  std::shared_ptr<Expr> expr_;
 };
 
 class BooleanConstant {
  public:
   static constexpr int PRECEDENCE = 0;
 
+  BooleanConstant() = default;
   explicit BooleanConstant(bool value) : value_(value) {}
 
   friend std::ostream& operator<<(std::ostream& os,
@@ -477,7 +494,7 @@ class BooleanConstant {
   int precedence() const { return PRECEDENCE; }
 
  private:
-  bool value_;
+  bool value_ = false;
 };
 
 }  // namespace fuzzer

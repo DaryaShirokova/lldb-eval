@@ -66,7 +66,7 @@ using BinOpMask = EnumBitset<BinOp>;
 using UnOpMask = EnumBitset<UnOp>;
 
 struct GenConfig {
-  int num_exprs_to_generate = 20;
+  int num_exprs_to_generate = 8;
 
   uint64_t int_const_min = 0;
   uint64_t int_const_max = 1000;
@@ -88,13 +88,13 @@ struct GenConfig {
       {1.0f, 0.0f},  // ExprKind::VariableExpr
       {7.0f, 0.4f},  // ExprKind::UnaryExpr
       {3.0f, 0.4f},  // ExprKind::BinaryExpr
-      {1.0f, 0.1f},  // ExprKind::AddressOf
-      {1.0f, 0.1f},  // ExprKind::MemberOf
-      {1.0f, 0.1f},  // ExprKind::MemberOfPtr
-      {1.0f, 0.1f},  // ExprKind::ArrayIndex
+      {0.0f, 0.1f},  // ExprKind::AddressOf
+      {0.0f, 0.1f},  // ExprKind::MemberOf
+      {0.0f, 0.1f},  // ExprKind::MemberOfPtr
+      {0.0f, 0.1f},  // ExprKind::ArrayIndex
       {2.0f, 0.1f},  // ExprKind::TernaryExpr
-      {1.0f, 0.1f},  // ExprKind::DereferenceExpr
       {1.0f, 0.0f},  // ExprKind::BooleanConstant
+      {0.0f, 0.1f},  // ExprKind::DereferenceExpr
       {1.0f, 0.4f},  // ExprKind::CastExpr
   }};
 
@@ -183,6 +183,9 @@ class ExprGenerator {
 
   std::optional<Type> gen_type(const Weights& weights,
                                const TypeConstraints& constraints);
+  std::optional<Type> gen_type_impl(const Weights& weights,
+                                    const TypeConstraints& constraints,
+                                    TypeKindMask mask);
   std::optional<QualifiedType> gen_qualified_type(
       const Weights& weights, const TypeConstraints& constraints);
   std::optional<Type> gen_pointer_type(const Weights& weights,

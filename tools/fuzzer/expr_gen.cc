@@ -60,11 +60,8 @@ class Weights {
 enum class AllowedTypeKind : unsigned char {
   EnumFirst,
 
-  // The boolean type.
-  Bool = EnumFirst,
-
-  // An integer type.
-  Int,
+  // An integer type or the boolean type.
+  Int = EnumFirst,
 
   // A floating-point type.
   Float,
@@ -78,24 +75,19 @@ enum class AllowedTypeKind : unsigned char {
 
   EnumLast = VoidPointerOrNullConstant,
 };
+inline constexpr size_t NUM_ALLOWED_TYPE_KINDS =
+    (size_t)AllowedTypeKind::EnumLast + 1;
 using AllowedTypeKinds = EnumBitset<AllowedTypeKind>;
 
-inline AllowedTypeKinds all_in_boolean_context() {
-  return AllowedTypeKinds::all_set();
-}
-
-inline AllowedTypeKinds int_kinds() {
-  return {{AllowedTypeKind::Bool, AllowedTypeKind::Int}};
-}
-
-inline AllowedTypeKinds float_kinds() {
-  return {
-      {AllowedTypeKind::Bool, AllowedTypeKind::Int, AllowedTypeKind::Float}};
-}
-
-inline AllowedTypeKinds dereferencable_pointer_kinds() {
-  return AllowedTypeKind::Pointer;
-}
+// All type kinds that can be allowed in a boolean context.
+static constexpr AllowedTypeKinds ALL_IN_BOOL_CTX = AllowedTypeKinds::all_set();
+// All type kinds that can be allowed in an integer only context (i.e. no
+// floating point values).
+static constexpr AllowedTypeKinds INT_KINDS = AllowedTypeKind::Int;
+// All type kinds that can be allowed in an floating point context (i.e. both
+// integers and floating point values).
+static constexpr AllowedTypeKinds FLOAT_KINDS = {AllowedTypeKind::Int,
+                                                 AllowedTypeKind::Float};
 
 using TypeToGen = std::variant<AllowedTypeKinds, Type>;
 
@@ -104,67 +96,74 @@ class TypeConstraints {
   const TypeToGen& gen_type() const { return type_; }
   bool must_be_lvalue() const { return must_be_lvalue_; }
 
-  bool is_allowed_type_kinds() const {
+  const AllowedTypeKinds* as_type_kinds() const {
+    return std::get_if<AllowedTypeKinds>(&type_);
+  }
+  bool is_type_kinds() const {
     return std::holds_alternative<AllowedTypeKinds>(type_);
   }
-  const AllowedTypeKinds* as_allowed_type_kinds() const {
-    return std::get_if<AllowedTypeKinds>(&type_);
+
+  bool allows_kind(AllowedTypeKind kind) const {
+    const auto* ptr = as_type_kinds();
+    if (ptr == nullptr) {
+      return false;
+    }
+
+    return (*ptr)[kind];
   }
 
   bool is_type() const { return std::holds_alternative<Type>(type_); }
   const Type* as_type() const { return std::get_if<Type>(&type_); }
-
-  bool is_pointer_type() const {
-    return std::holds_alternative<Type>(type_);
-    const auto* ptr = std::get_if<Type>(&type_);
-    if (ptr == nullptr) {
-      return false;
-    }
-    return std::holds_alternative<PointerType>(*ptr);
-  }
+  bool is_pointer_type() const { return std::holds_alternative<Type>(type_); }
   const PointerType* as_pointer_type() const {
     const auto* ptr = std::get_if<Type>(&type_);
-    if (ptr == nullptr) {
-      return nullptr;
-    }
-
+    // Will return null if `ptr` is null.
     return std::get_if<PointerType>(ptr);
   }
-
-  bool is_scalar_type() const {
-    return std::holds_alternative<Type>(type_);
-    const auto* ptr = std::get_if<Type>(&type_);
+  // Returns if the constraints in question request a `void*` type, ignoring any
+  // cv-qualifiers.
+  bool is_void_pointer_type() const {
+    const auto* ptr = as_pointer_type();
     if (ptr == nullptr) {
       return false;
     }
-    return std::holds_alternative<ScalarType>(*ptr);
+
+    // We don't care about cv qualifiers
+    const auto* type = std::get_if<ScalarType>(&ptr->type().type());
+    return type != nullptr && *type == ScalarType::Void;
   }
+
   const ScalarType* as_scalar_type() const {
     const auto* ptr = std::get_if<Type>(&type_);
-    if (ptr == nullptr) {
-      return nullptr;
-    }
-
+    // Will return null if `ptr` is null.
     return std::get_if<ScalarType>(ptr);
   }
-
-  bool is_tagged_type() const {
-    return std::holds_alternative<Type>(type_);
-    const auto* ptr = std::get_if<Type>(&type_);
-    if (ptr == nullptr) {
-      return false;
-    }
-    return std::holds_alternative<TaggedType>(*ptr);
+  bool is_any_scalar_type() const { return as_scalar_type() != nullptr; }
+  bool is_nonvoid_scalar_type() const {
+    const auto* ptr = as_scalar_type();
+    return ptr != nullptr && *ptr != ScalarType::Void;
   }
+  bool is_int_scalar_type() const {
+    const auto* ptr = as_scalar_type();
+    return ptr != nullptr && fuzzer::is_int_scalar_type(*ptr);
+  }
+  bool is_float_scalar_type() const {
+    const auto* ptr = as_scalar_type();
+    return ptr != nullptr && fuzzer::is_float_scalar_type(*ptr);
+  }
+  bool is_scalar_type(ScalarType scalar) const {
+    const auto* ptr = as_scalar_type();
+    return ptr != nullptr && *ptr == scalar;
+  }
+
   const TaggedType* as_tagged_type() const {
     const auto* ptr = std::get_if<Type>(&type_);
-    if (ptr == nullptr) {
-      return nullptr;
-    }
-
+    // Will return null if `ptr` is null.
     return std::get_if<TaggedType>(ptr);
   }
+  bool is_tagged_type() const { return as_tagged_type() != nullptr; }
 
+  TypeConstraints() = default;
   explicit TypeConstraints(TypeToGen type, bool must_be_lvalue = false)
       : type_(std::move(type)), must_be_lvalue_(must_be_lvalue) {}
 
@@ -173,153 +172,14 @@ class TypeConstraints {
   bool must_be_lvalue_ = false;
 };
 
-/*
-class AllowedExprKindsVisitor {
- public:
-  AllowedExprKinds operator()(AllowedTypeKinds kinds) {
-    if (kinds == AllowedTypeKinds::AnyType) {
-      return AllowedExprKinds(~0ull);
-    }
-
-    AllowedExprKinds retval = 0;
-
-    // `0` is the null pointer constant, hence we can always use `0` as an
-    // integer constant.
-    retval[(size_t)ExprKind::IntegerConstant] = true;
-
-    // We can always generate ternary expressions (e.g. a ternary exception
-    // with the same left hand side and right hand side).
-    retval[(size_t)ExprKind::TernaryExpr] = true;
-
-    // We can always generate cast expressions (e.g. a no-op cast).
-    retval[(size_t)ExprKind::CastExpr] = true;
-
-    // We can always generate `(expr + 0)` for a given expression.
-    retval[(size_t)ExprKind::BinaryExpr] = true;
-
-    retval[(size_t)ExprKind::VariableExpr] = true;
-
-    if (kinds != AllowedTypeKinds::AnyPointer) {
-      // We can only use `!` for pointers if we're concerned about a boolean
-      // context.
-      retval[(size_t)ExprKind::UnaryExpr] = true;
-      // `false` is not a null pointer constant.
-      retval[(size_t)ExprKind::BooleanConstant] = true;
-    }
-
-    if (kinds == AllowedTypeKinds::AnyFloat ||
-        kinds == AllowedTypeKinds::AnyForBoolContext) {
-      retval[(size_t)ExprKind::DoubleConstant] = true;
-    }
-
-    // TODO(alextasos): Deal with the following cases:
-    // retval[(size_t)ExprKind::AddressOf] = true;
-    // retval[(size_t)ExprKind::MemberOf] = true;
-    // retval[(size_t)ExprKind::MemberOfPtr] = true;
-    // retval[(size_t)ExprKind::ArrayIndex] = true;
-
-    return retval;
-  }
-
-  AllowedExprKinds operator()(const ReferenceType& type) {
-    auto retval = (*this)(type.type());
-    if (!type.can_reference_rvalue()) {
-      retval[(size_t)ExprKind::IntegerConstant] = false;
-      retval[(size_t)ExprKind::BooleanConstant] = false;
-      retval[(size_t)ExprKind::DoubleConstant] = false;
-      retval[(size_t)ExprKind::UnaryExpr] = false;
-      retval[(size_t)ExprKind::TernaryExpr] = false;
-      retval[(size_t)ExprKind::CastExpr] = false;
-    }
-
-    return retval;
-  }
-
-  AllowedExprKinds operator()(const QualifiedType& type) {
-    return std::visit(*this, type.type());
-  }
-
-  AllowedExprKinds operator()(const ScalarType& type) {
-    AllowedExprKinds retval = ~0ull;
-    if (type == ScalarType::Void) {
-      return retval;
-    }
-    retval[(size_t)ExprKind::AddressOf] = false;
-
-    if (type == ScalarType::Float || type == ScalarType::Double ||
-        type == ScalarType::LongDouble) {
-      return retval;
-    }
-    retval[(size_t)ExprKind::DoubleConstant] = false;
-
-    return retval;
-  }
-
-  AllowedExprKinds operator()(const TaggedType&) {
-    AllowedExprKinds retval = 0;
-    retval[(size_t)ExprKind::VariableExpr] = true;
-    retval[(size_t)ExprKind::CastExpr] = false;
-
-    return retval;
-  }
-
-  AllowedExprKinds operator()(const PointerType& type) {
-    AllowedExprKinds retval = 0;
-    retval[(size_t)ExprKind::IntegerConstant] = true;
-
-    if (std::holds_alternative<PointerType>(type.type().type())) {
-      return retval;
-    }
-
-    retval[(size_t)ExprKind::AddressOf] = true;
-    retval[(size_t)ExprKind::VariableExpr] = true;
-
-    return retval;
-  }
-};
-
-AllowedExprKinds allowed_expr_kinds(const TypeConstraints constraints) {
-  auto retval = std::visit(AllowedExprKindsVisitor(), constraints.type());
-  if (constraints.must_be_lvalue()) {
-    // TODO(alextasos): Duplicate code below
-    retval[(size_t)ExprKind::IntegerConstant] = false;
-    retval[(size_t)ExprKind::DoubleConstant] = false;
-    retval[(size_t)ExprKind::UnaryExpr] = false;
-    retval[(size_t)ExprKind::TernaryExpr] = false;
-    retval[(size_t)ExprKind::CastExpr] = false;
-  }
-
-  return retval;
-}
-*/
-
-template <typename T, typename CrtpClass>
-class ConstraintsBaseVisitor {
- public:
-  T operator()(const AllowedTypeKind&) {
-    lldb_eval_unreachable("Generation not implemented for type kinds.");
-  }
-
-  T operator()(const PointerType&) {
-    lldb_eval_unreachable("Generation not implemented for pointer types.");
-  }
-
-  T operator()(const TaggedType&) {
-    lldb_eval_unreachable("Generation not implemented for tagged types.");
-  }
-
-  T operator()(const ScalarType&) {
-    lldb_eval_unreachable("Generation not implemented for scalar types.");
-  }
-
-  T operator()(const Type& type) {
-    return std::visit(static_cast<CrtpClass&>(*this), type);
-  }
-
-  T operator()(const QualifiedType& type) {
-    return std::visit(static_cast<CrtpClass&>(*this), type.type());
-  }
-};
+static constexpr ExprKindMask LVALUE_KINDS = {{
+    ExprKind::VariableExpr,
+    ExprKind::DereferenceExpr,
+    ExprKind::ArrayIndex,
+    ExprKind::MemberOf,
+    // `&(true ? x : y)` is semantically valid in C/C++
+    ExprKind::MemberOfPtr,
+}};
 
 int expr_precedence(const Expr& e) {
   return std::visit([](const auto& e) { return e.precedence(); }, e);
@@ -331,7 +191,8 @@ std::optional<Expr> ExprGenerator::gen_boolean_constant(
     return {};
   }
 
-  if (constraints.is_allowed_type_kinds() || constraints.is_scalar_type()) {
+  if (constraints.allows_kind(AllowedTypeKind::Int) ||
+      constraints.is_int_scalar_type()) {
     return BooleanConstant(rng_->gen_boolean());
   }
 
@@ -344,12 +205,14 @@ std::optional<Expr> ExprGenerator::gen_integer_constant(
     return {};
   }
 
-  if (constraints.is_pointer_type()) {
-    return IntegerConstant(0);
+  if (constraints.allows_kind(AllowedTypeKind::Int) ||
+      constraints.is_nonvoid_scalar_type()) {
+    return rng_->gen_integer_constant(cfg_.int_const_min, cfg_.int_const_max);
   }
 
-  if (constraints.is_allowed_type_kinds() || constraints.is_scalar_type()) {
-    return rng_->gen_integer_constant(cfg_.int_const_min, cfg_.int_const_max);
+  if (constraints.allows_kind(AllowedTypeKind::VoidPointerOrNullConstant) ||
+      constraints.is_pointer_type()) {
+    return IntegerConstant(0);
   }
 
   return {};
@@ -361,13 +224,8 @@ std::optional<Expr> ExprGenerator::gen_double_constant(
     return {};
   }
 
-  const auto* as_kind = constraints.as_allowed_type_kinds();
-  if (as_kind != nullptr && (*as_kind)[AllowedTypeKind::Float]) {
-    return rng_->gen_double_constant(cfg_.double_constant_min,
-                                     cfg_.double_constant_max);
-  }
-
-  if (constraints.is_scalar_type()) {
+  if (constraints.allows_kind(AllowedTypeKind::Float) ||
+      constraints.is_nonvoid_scalar_type()) {
     return rng_->gen_double_constant(cfg_.double_constant_min,
                                      cfg_.double_constant_max);
   }
@@ -377,48 +235,83 @@ std::optional<Expr> ExprGenerator::gen_double_constant(
 
 std::optional<Expr> ExprGenerator::gen_variable_expr(
     const TypeConstraints& constraints) {
-  class Visitor : public ConstraintsBaseVisitor<VariableExpr, Visitor> {
-   public:
-    Visitor(ExprGenerator& gen) : gen_(gen) {}
+  if (constraints.allows_kind(AllowedTypeKind::Int)) {
+    return VariableExpr("x");
+  }
+  if (constraints.allows_kind(AllowedTypeKind::Float)) {
+    return VariableExpr("fnan");
+  }
+  if (constraints.allows_kind(AllowedTypeKind::Pointer)) {
+    return VariableExpr("null_char_ptr");
+  }
+  if (constraints.allows_kind(AllowedTypeKind::VoidPointerOrNullConstant)) {
+    return VariableExpr("void_ptr");
+  }
 
-    using ConstraintsBaseVisitor::operator();
+  auto* type_ptr = constraints.as_type();
+  assert(type_ptr != nullptr &&
+         "Not a type, did you introduce a new type kind that's not being "
+         "handled?");
 
-    VariableExpr operator()(const AllowedTypeKind&) {
-      // TODO: Generate more kinds of variables
-      return VariableExpr("x");
-    }
+  const auto& symtab = cfg_.symbol_table;
+  auto res = symtab.find(*type_ptr);
+  assert(res != symtab.end() && "Could not find type in symbol table");
+  assert(!res->second.empty() && "Could not find variables with this type");
 
-    VariableExpr operator()(const Type& type) {
-      const auto& symtab = gen_.cfg_.symbol_table;
-      auto res = symtab.find(type);
-      assert(res != symtab.end() && "Could not find type in symbol table");
-      assert(!res->second.empty() && "Could not find variables with this type");
-
-      return VariableExpr(res->second[0]);
-    }
-
-   private:
-    ExprGenerator& gen_;
-  };
-
-  return std::visit(Visitor(*this), *constraints.as_type());
+  return VariableExpr(res->second[0]);
 }
 
 std::optional<Expr> ExprGenerator::gen_binary_expr(
     const Weights& weights, const TypeConstraints& constraints) {
-  auto op = rng_->gen_bin_op(cfg_.bin_op_mask);
+  // We can't do pointer arithmetic with `void*`.
+  if (constraints.is_void_pointer_type()) {
+    return {};
+  }
+
+  BinOpMask mask = cfg_.bin_op_mask;
+
+  // If we're expected to return a pointer type expression, we can only:
+  // - Add or subtract pointers with integers.
+  // - Subtract two non-void pointers of the same type (aka `ptrdiff_t`).
+  // - Compare pointers. In C, all pointer types can be freely compared
+  // against each other. C++, however, allows only the following:
+  //   + Comparison of pointers to `void*` pointers or the `0` null pointer
+  //   constant.
+  //   + Comparison of pointers of the same type.
+  //   + Comparison of pointers with a type in a superclass/subclass
+  //   relationship (note the edge case regarding non-virtual multiple
+  //   inheritance).
+  static constexpr BinOpMask POINTER_OP_MASK = {
+      BinOp::Plus,       BinOp::Minus,    BinOp::Eq, BinOp::Ne,
+      BinOp::Lt,         BinOp::Le,       BinOp::Gt, BinOp::Ge,
+      BinOp::LogicalAnd, BinOp::LogicalOr};
+  if (constraints.is_pointer_type()) {
+    mask &= POINTER_OP_MASK;
+  }
+
+  // If we're expected to return a floating point value, we can't use bitwise
+  // operators and the modulo operator '%'.
+  static constexpr BinOpMask FLOATING_POINT_OP_MASK = {
+      BinOp::Plus, BinOp::Minus, BinOp::Mult,       BinOp::Div,
+      BinOp::Eq,   BinOp::Ne,    BinOp::Lt,         BinOp::Le,
+      BinOp::Gt,   BinOp::Ge,    BinOp::LogicalAnd, BinOp::LogicalOr};
+  if (constraints.is_float_scalar_type()) {
+    mask &= FLOATING_POINT_OP_MASK;
+  }
+
+  auto op = rng_->gen_bin_op(mask);
 
   auto maybe_lhs = gen_with_weights(weights, constraints);
   if (!maybe_lhs.has_value()) {
     return {};
   }
-  auto& lhs = maybe_lhs.value();
+  auto&& lhs_rvalue = maybe_lhs.value();
 
   auto maybe_rhs = gen_with_weights(weights, constraints);
   if (!maybe_rhs.has_value()) {
     return {};
   }
-  auto& rhs = maybe_rhs.value();
+  auto&& rhs_rvalue = maybe_rhs.value();
 
   // Rules for parenthesising the left hand side:
   // 1. If the left hand side has a strictly lower precedence than ours,
@@ -429,9 +322,11 @@ std::optional<Expr> ExprGenerator::gen_binary_expr(
   //    binary operators have left-to-right associativity.
   //    Example: We do not have to emit `(3 - 4) + 5`, `3 - 4 + 5` will also
   //    do.
-  auto lhs_precedence = expr_precedence(lhs);
-  if (lhs_precedence > bin_op_precedence(op)) {
-    lhs = ParenthesizedExpr(std::move(lhs));
+  Expr lhs;
+  if (expr_precedence(lhs_rvalue) > bin_op_precedence(op)) {
+    lhs = ParenthesizedExpr(lhs_rvalue);
+  } else {
+    lhs = lhs_rvalue;
   }
 
   // Rules for parenthesising the right hand side:
@@ -445,9 +340,11 @@ std::optional<Expr> ExprGenerator::gen_binary_expr(
   //    Example: We emit `3 - (4 + 5)` instead of `3 - 4 + 5`. We also
   //    emit `3 + (4 + 5)` instead of `3 + 4 + 5`, even though both
   //    expressions are equivalent.
-  auto rhs_precedence = expr_precedence(rhs);
-  if (rhs_precedence >= bin_op_precedence(op)) {
-    rhs = ParenthesizedExpr(std::move(rhs));
+  Expr rhs;
+  if (expr_precedence(rhs_rvalue) >= bin_op_precedence(op)) {
+    rhs = ParenthesizedExpr(rhs_rvalue);
+  } else {
+    rhs = rhs_rvalue;
   }
 
   return BinaryExpr(std::move(lhs), op, std::move(rhs));
@@ -455,86 +352,126 @@ std::optional<Expr> ExprGenerator::gen_binary_expr(
 
 std::optional<Expr> ExprGenerator::gen_unary_expr(
     const Weights& weights, const TypeConstraints& constraints) {
-  if (constraints.must_be_lvalue()) {
+  // Unary expressions cannot generate pointer values
+  if (constraints.must_be_lvalue() || constraints.is_pointer_type()) {
+    return {};
+  }
+
+  const auto type_kinds_ptr = constraints.as_type_kinds();
+  if (type_kinds_ptr != nullptr && (*type_kinds_ptr & ~FLOAT_KINDS).none()) {
     return {};
   }
 
   auto mask = cfg_.un_op_mask;
-  const auto* as_kind = constraints.as_allowed_type_kinds();
-  if (as_kind != nullptr && (*as_kind)[AllowedTypeKind::Float]) {
-    mask[UnOp::BitNot] = false;
+  while (mask.any()) {
+    auto op = (UnOp)rng_->gen_un_op(mask);
+
+    AllowedTypeKinds type_kinds = FLOAT_KINDS;
+    if (op == UnOp::BitNot) {
+      type_kinds = INT_KINDS;
+    } else if (op == UnOp::LogicalNot) {
+      type_kinds = ALL_IN_BOOL_CTX;
+    }
+
+    auto maybe_expr = gen_with_weights(weights, TypeConstraints(type_kinds));
+    if (!maybe_expr.has_value()) {
+      continue;
+    }
+
+    auto&& expr_rvalue = maybe_expr.value();
+    Expr expr;
+    if (expr_precedence(expr_rvalue) > UnaryExpr::PRECEDENCE) {
+      expr = ParenthesizedExpr(expr_rvalue);
+    } else {
+      expr = expr_rvalue;
+    }
+
+    return UnaryExpr(op, std::move(expr));
   }
 
-  const auto* as_scalar = constraints.as_scalar_type();
-  if (as_scalar != nullptr && *as_scalar != ScalarType::Float &&
-      *as_scalar != ScalarType::Double &&
-      *as_scalar != ScalarType::LongDouble) {
-    mask[UnOp::BitNot] = false;
-  }
-
-  auto maybe_expr = gen_with_weights(weights, constraints);
-  if (!maybe_expr.has_value()) {
-    return {};
-  }
-  auto& expr = maybe_expr.value();
-  auto op = (UnOp)rng_->gen_un_op(mask);
-
-  if (expr_precedence(expr) > UnaryExpr::PRECEDENCE) {
-    expr = ParenthesizedExpr(std::move(expr));
-  }
-
-  return UnaryExpr(op, std::move(expr));
+  return {};
 }
 
 std::optional<Expr> ExprGenerator::gen_ternary_expr(
     const Weights& weights, const TypeConstraints& constraints) {
-  auto maybe_cond =
-      gen_with_weights(weights, TypeConstraints(all_in_boolean_context()));
+  auto maybe_cond = gen_with_weights(weights, TypeConstraints(ALL_IN_BOOL_CTX));
   if (!maybe_cond.has_value()) {
     return {};
   }
-  auto& cond = maybe_cond.value();
+  auto&& cond_rvalue = maybe_cond.value();
 
-  auto maybe_lhs = gen_with_weights(weights, constraints);
+  TypeConstraints new_constraints{AllowedTypeKinds()};
+
+  // We want to be sure that the left-hand side and right-hand side that
+  // we generate have compatible types.
+  if (constraints.must_be_lvalue() && !constraints.is_type()) {
+    auto new_type = gen_type(weights, constraints);
+    if (!new_type.has_value()) {
+      return {};
+    }
+    new_constraints = TypeConstraints(std::move(new_type.value()),
+                                      constraints.must_be_lvalue());
+  } else {
+    new_constraints = constraints;
+  }
+
+  auto maybe_lhs = gen_with_weights(weights, new_constraints);
   if (!maybe_lhs.has_value()) {
     return {};
   }
-  auto& lhs = maybe_lhs.value();
+  auto&& lhs_rvalue = maybe_lhs.value();
 
-  auto maybe_rhs = gen_with_weights(weights, constraints);
+  auto maybe_rhs = gen_with_weights(weights, new_constraints);
   if (!maybe_rhs.has_value()) {
     return {};
   }
-  auto& rhs = maybe_lhs.value();
+  auto&& rhs_rvalue = maybe_rhs.value();
 
-  if (expr_precedence(cond) == TernaryExpr::PRECEDENCE) {
-    cond = ParenthesizedExpr(std::move(cond));
+  Expr cond;
+  if (expr_precedence(cond_rvalue) == TernaryExpr::PRECEDENCE) {
+    cond = ParenthesizedExpr(cond_rvalue);
+  } else {
+    cond = cond_rvalue;
   }
 
-  return TernaryExpr(std::move(cond), std::move(lhs), std::move(rhs));
+  return TernaryExpr(std::move(cond), lhs_rvalue, rhs_rvalue);
 }
 
 std::optional<Expr> ExprGenerator::gen_cast_expr(
     const Weights& weights, const TypeConstraints& constraints) {
-  TypeConstraints new_constraints(all_in_boolean_context());
+  if (constraints.must_be_lvalue() || constraints.is_tagged_type()) {
+    return {};
+  }
 
   auto maybe_type = gen_type(weights, constraints);
   if (!maybe_type.has_value()) {
     return {};
   }
-  auto& type = maybe_type.value();
+  auto&& type_rvalue = maybe_type.value();
+
+  AllowedTypeKinds new_kinds;
+  if (std::holds_alternative<PointerType>(type_rvalue)) {
+    new_kinds = {AllowedTypeKind::Pointer,
+                 AllowedTypeKind::VoidPointerOrNullConstant};
+  } else {
+    new_kinds = FLOAT_KINDS;
+  }
+  TypeConstraints new_constraints(new_kinds);
 
   auto maybe_expr = gen_with_weights(weights, new_constraints);
   if (!maybe_expr.has_value()) {
     return {};
   }
-  auto& expr = maybe_expr.value();
+  auto&& expr_rvalue = maybe_expr.value();
 
-  if (expr_precedence(expr) > CastExpr::PRECEDENCE) {
-    expr = ParenthesizedExpr(std::move(expr));
+  Expr expr;
+  if (expr_precedence(expr_rvalue) > CastExpr::PRECEDENCE) {
+    expr = ParenthesizedExpr(expr_rvalue);
+  } else {
+    expr = expr_rvalue;
   }
 
-  return CastExpr(std::move(type), std::move(expr));
+  return CastExpr(std::move(type_rvalue), std::move(expr));
 }
 
 std::optional<Expr> ExprGenerator::gen_address_of_expr(
@@ -543,14 +480,30 @@ std::optional<Expr> ExprGenerator::gen_address_of_expr(
     return {};
   }
 
-  auto maybe_expr = gen_with_weights(weights, constraints);
+  if (!constraints.allows_kind(AllowedTypeKind::Pointer) ||
+      !constraints.is_pointer_type()) {
+    return {};
+  }
+
+  TypeConstraints new_constraints;
+  const auto* type_ptr = constraints.as_pointer_type();
+  if (type_ptr == nullptr) {
+    new_constraints = TypeConstraints(AllowedTypeKind::Pointer);
+  } else {
+    new_constraints = TypeConstraints(type_ptr->type().type());
+  }
+
+  auto maybe_expr = gen_with_weights(weights, new_constraints);
   if (!maybe_expr.has_value()) {
     return {};
   }
-  auto& expr = maybe_expr.value();
+  auto&& expr_rvalue = maybe_expr.value();
 
-  if (expr_precedence(expr) > AddressOf::PRECEDENCE) {
-    expr = ParenthesizedExpr(std::move(expr));
+  Expr expr;
+  if (expr_precedence(expr_rvalue) > AddressOf::PRECEDENCE) {
+    expr = ParenthesizedExpr(expr_rvalue);
+  } else {
+    expr = expr_rvalue;
   }
 
   return AddressOf(std::move(expr));
@@ -562,10 +515,13 @@ std::optional<Expr> ExprGenerator::gen_member_of_expr(
   if (!maybe_expr.has_value()) {
     return {};
   }
-  auto& expr = maybe_expr.value();
+  auto&& expr_rvalue = maybe_expr.value();
 
-  if (expr_precedence(expr) > MemberOf::PRECEDENCE) {
-    expr = ParenthesizedExpr(std::move(expr));
+  Expr expr;
+  if (expr_precedence(expr_rvalue) > MemberOf::PRECEDENCE) {
+    expr = ParenthesizedExpr(expr_rvalue);
+  } else {
+    expr = expr_rvalue;
   }
 
   return MemberOf(std::move(expr), "f1");
@@ -588,25 +544,28 @@ std::optional<Expr> ExprGenerator::gen_member_of_ptr_expr(
 
 std::optional<Expr> ExprGenerator::gen_array_index_expr(
     const Weights& weights, const TypeConstraints& constraints) {
-  TypeConstraints idx_constraints(int_kinds());
+  TypeConstraints idx_constraints(INT_KINDS);
 
   auto maybe_expr = gen_with_weights(weights, constraints);
   if (!maybe_expr.has_value()) {
     return {};
   }
-  auto& expr = maybe_expr.value();
+  auto&& expr_rvalue = maybe_expr.value();
 
   auto maybe_idx = gen_with_weights(weights, idx_constraints);
   if (!maybe_idx.has_value()) {
     return {};
   }
-  auto& idx = maybe_idx.value();
+  auto&& idx_rvalue = maybe_idx.value();
 
-  if (expr_precedence(expr) > ArrayIndex::PRECEDENCE) {
-    expr = ParenthesizedExpr(std::move(expr));
+  Expr expr;
+  if (expr_precedence(expr_rvalue) > ArrayIndex::PRECEDENCE) {
+    expr = ParenthesizedExpr(expr_rvalue);
+  } else {
+    expr = expr_rvalue;
   }
 
-  return ArrayIndex(std::move(expr), std::move(idx));
+  return ArrayIndex(std::move(expr), idx_rvalue);
 }
 
 std::optional<Expr> ExprGenerator::gen_dereference_expr(
@@ -615,10 +574,13 @@ std::optional<Expr> ExprGenerator::gen_dereference_expr(
   if (!maybe_expr.has_value()) {
     return {};
   }
-  auto& expr = maybe_expr.value();
+  auto&& expr_rvalue = maybe_expr.value();
 
-  if (expr_precedence(expr) > DereferenceExpr::PRECEDENCE) {
-    expr = ParenthesizedExpr(std::move(expr));
+  Expr expr;
+  if (expr_precedence(expr_rvalue) > DereferenceExpr::PRECEDENCE) {
+    expr = ParenthesizedExpr(expr_rvalue);
+  } else {
+    expr = expr_rvalue;
   }
 
   return DereferenceExpr(std::move(expr));
@@ -629,6 +591,9 @@ std::optional<Expr> ExprGenerator::gen_with_weights(
   Weights new_weights = weights;
 
   ExprKindMask mask = ExprKindMask::all_set();
+  if (constraints.must_be_lvalue()) {
+    mask &= LVALUE_KINDS;
+  }
 
   while (mask.any()) {
     auto kind = rng_->gen_expr_kind(new_weights, mask);
@@ -697,10 +662,12 @@ std::optional<Expr> ExprGenerator::gen_with_weights(
     if (!maybe_expr.has_value()) {
       new_weights[kind] = old_weight;
       mask[idx] = false;
-    }
-    auto& expr = maybe_expr.value();
 
-    return maybe_parenthesized(std::move(expr));
+      continue;
+    }
+    auto&& expr_rvalue = maybe_expr.value();
+
+    return maybe_parenthesized(expr_rvalue);
   }
 
   return {};
@@ -716,9 +683,16 @@ Expr ExprGenerator::maybe_parenthesized(Expr expr) {
 
 std::optional<Type> ExprGenerator::gen_type(
     const Weights& weights, const TypeConstraints& constraints) {
-  Weights new_weights = weights;
+  static constexpr TypeKindMask NO_TAGGED_TYPES = {TypeKind::ScalarType,
+                                                   TypeKind::PointerType};
 
-  TypeKindMask mask = TypeKindMask::all_set();
+  return gen_type_impl(weights, constraints, NO_TAGGED_TYPES);
+}
+
+std::optional<Type> ExprGenerator::gen_type_impl(
+    const Weights& weights, const TypeConstraints& constraints,
+    TypeKindMask mask) {
+  Weights new_weights = weights;
 
   while (mask.any()) {
     auto choice = rng_->gen_type_kind(new_weights, mask);
@@ -756,7 +730,8 @@ std::optional<Type> ExprGenerator::gen_type(
 
 std::optional<QualifiedType> ExprGenerator::gen_qualified_type(
     const Weights& weights, const TypeConstraints& constraints) {
-  auto maybe_type = gen_type(weights, constraints);
+  auto maybe_type =
+      gen_type_impl(weights, constraints, TypeKindMask::all_set());
   if (!maybe_type.has_value()) {
     return {};
   }
@@ -802,7 +777,7 @@ std::optional<Expr> ExprGenerator::generate() {
     type_weights[i] = cfg_.type_kind_weights[i].initial_weight;
   }
 
-  return gen_with_weights(weights, TypeConstraints(all_in_boolean_context()));
+  return gen_with_weights(weights, TypeConstraints(ALL_IN_BOOL_CTX));
 }
 
 template <typename Enum, typename Rng>
