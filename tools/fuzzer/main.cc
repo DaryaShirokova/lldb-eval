@@ -68,6 +68,7 @@ void run_repl(lldb::SBFrame& frame) {
 
 void run_fuzzer(lldb::SBFrame& frame) {
   std::random_device rd;
+  // unsigned seed = 2934586150;
   auto seed = rd();
   printf("Seed for this run is: %u\n", seed);
 

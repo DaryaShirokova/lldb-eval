@@ -140,6 +140,10 @@ class EnumBitset {
     return bitset_ != rhs.bitset_;
   }
 
+  bool operator==(Enum value) const { return *this == EnumBitset(value); }
+
+  bool operator!=(Enum value) const { return *this != EnumBitset(value); }
+
   bool operator[](Enum value) const { return bitset_[(size_t)value]; }
   typename BitsetType::reference operator[](Enum value) {
     return bitset_[(size_t)value];
