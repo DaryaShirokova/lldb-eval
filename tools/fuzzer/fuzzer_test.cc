@@ -56,7 +56,7 @@ class FakeGeneratorRng : public GeneratorRng {
     return kind;
   }
 
-  ScalarType gen_scalar_type() override {
+  ScalarType gen_scalar_type(EnumBitset<ScalarType>) override {
     assert(!scalar_types_.empty());
     ScalarType type = scalar_types_.back();
     scalar_types_.pop_back();
@@ -87,6 +87,12 @@ class FakeGeneratorRng : public GeneratorRng {
 
     return constant;
   }
+
+  bool gen_binop_ptr_expr(float) override { return false; }
+
+  bool gen_binop_flip_operands(float) override { return false; }
+
+  bool gen_binop_ptrdiff_expr(float) override { return false; }
 
   CvQualifiers gen_cv_qualifiers(float, float) override {
     assert(!cv_qualifiers_.empty());
