@@ -61,21 +61,6 @@ class Weights {
 
 using ScalarMask = EnumBitset<ScalarType>;
 
-static constexpr ScalarMask INT_TYPES = {
-    ScalarType::Bool,           ScalarType::Char,
-    ScalarType::UnsignedChar,   ScalarType::SignedChar,
-    ScalarType::SignedShort,    ScalarType::UnsignedShort,
-    ScalarType::SignedInt,      ScalarType::UnsignedInt,
-    ScalarType::SignedLong,     ScalarType::UnsignedLong,
-    ScalarType::SignedLongLong, ScalarType::UnsignedLongLong,
-};
-
-static constexpr ScalarMask FLOAT_TYPES = {
-    ScalarType::Float,
-    ScalarType::Double,
-    ScalarType::LongDouble,
-};
-
 int expr_precedence(const Expr& e) {
   return std::visit([](const auto& e) { return e.precedence(); }, e);
 }

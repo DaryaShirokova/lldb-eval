@@ -237,6 +237,21 @@ class ExprConstraints {
   bool must_be_lvalue_ = false;
 };
 
+inline constexpr ScalarMask INT_TYPES = {
+    ScalarType::Bool,           ScalarType::Char,
+    ScalarType::UnsignedChar,   ScalarType::SignedChar,
+    ScalarType::SignedShort,    ScalarType::UnsignedShort,
+    ScalarType::SignedInt,      ScalarType::UnsignedInt,
+    ScalarType::SignedLong,     ScalarType::UnsignedLong,
+    ScalarType::SignedLongLong, ScalarType::UnsignedLongLong,
+};
+
+inline constexpr ScalarMask FLOAT_TYPES = {
+    ScalarType::Float,
+    ScalarType::Double,
+    ScalarType::LongDouble,
+};
+
 }  // namespace fuzzer
 
 #endif  // INCLUDE_CONSTRAINTS_H

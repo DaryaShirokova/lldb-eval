@@ -109,8 +109,14 @@ bool TypeConstraints::allows_type(const Type& type) const {
 
   const auto* as_ptr = std::get_if<PointerType>(&type);
   if (as_ptr != nullptr) {
+    const auto& inner = as_ptr->type().type();
+    const auto* as_scalar = std::get_if<ScalarType>(&inner);
+    if (as_scalar != nullptr && *as_scalar == ScalarType::Void) {
+      return allows_void_pointer();
+    }
+
     const auto can_point_to = allowed_to_point_to();
-    return can_point_to.allows_type(as_ptr->type().type());
+    return can_point_to.allows_type(inner);
   }
 
   return false;

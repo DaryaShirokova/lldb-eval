@@ -3,12 +3,14 @@
 #include <cstddef>
 #include <sstream>
 #include <type_traits>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "tools/fuzzer/ast.h"
+#include "tools/fuzzer/constraints.h"
 #include "tools/fuzzer/expr_gen.h"
 
 using namespace fuzzer;
@@ -49,7 +51,10 @@ class FakeGeneratorRng : public GeneratorRng {
   }
 
   TypeKind gen_type_kind(const Weights&, const TypeKindMask&) override {
-    assert(!type_kinds_.empty());
+    if (type_kinds_.empty()) {
+      return TypeKind::ScalarType;
+    }
+
     TypeKind kind = type_kinds_.back();
     type_kinds_.pop_back();
 
@@ -57,7 +62,9 @@ class FakeGeneratorRng : public GeneratorRng {
   }
 
   ScalarType gen_scalar_type(EnumBitset<ScalarType>) override {
-    assert(!scalar_types_.empty());
+    if (scalar_types_.empty()) {
+      return ScalarType::SignedInt;
+    }
     ScalarType type = scalar_types_.back();
     scalar_types_.pop_back();
 
@@ -509,41 +516,50 @@ std::vector<PrecedenceTestParam> gen_precedence_params() {
   }
   {
     // clang-format off
-    Expr expected = CastExpr(
-        ScalarType::SignedInt,
+    Expr expected = UnaryExpr(
+        UnOp::BitNot,
         ParenthesizedExpr(TernaryExpr(
-            IntegerConstant(1), IntegerConstant(2), IntegerConstant(3))));
+            IntegerConstant(1),
+            IntegerConstant(2),
+            IntegerConstant(3))));
     // clang-format on
 
-    std::string str = "(int) (1 ? 2 : 3)";
+    std::string str = "~(1 ? 2 : 3)";
     params.emplace_back(std::move(str), std::move(expected));
   }
   {
     // clang-format off
-    Expr expected = TernaryExpr(
-            BooleanConstant(true),
-            IntegerConstant(0),
-            TernaryExpr(
-                BooleanConstant(false),
-                IntegerConstant(1),
-                IntegerConstant(2)));
-    // clang-format on
-
-    std::string str = "true ? 0 : false ? 1 : 2";
-    params.emplace_back(std::move(str), std::move(expected));
-  }
-  {
-    // clang-format off
-    Expr expected = TernaryExpr(
-        ParenthesizedExpr( TernaryExpr(
-            BinaryExpr(IntegerConstant(1), BinOp::Eq, IntegerConstant(2)),
-            BooleanConstant(false),
-            BooleanConstant(true))),
+    Expr expected = BinaryExpr(
         IntegerConstant(1),
-        IntegerConstant(0));
+        BinOp::Mult,
+        ParenthesizedExpr(
+            TernaryExpr(
+                BooleanConstant(true),
+                IntegerConstant(0),
+                TernaryExpr(
+                    BooleanConstant(false),
+                    IntegerConstant(1),
+                    IntegerConstant(2)))));
     // clang-format on
 
-    std::string str = "(1 == 2 ? false : true) ? 1 : 0";
+    std::string str = "1 * (true ? 0 : false ? 1 : 2)";
+    params.emplace_back(std::move(str), std::move(expected));
+  }
+  {
+    // clang-format off
+    Expr expected = BinaryExpr(
+        IntegerConstant(4),
+        BinOp::Mult,
+        ParenthesizedExpr(
+            TernaryExpr(ParenthesizedExpr(TernaryExpr(
+                BinaryExpr(IntegerConstant(1), BinOp::Eq, IntegerConstant(2)),
+                BooleanConstant(false),
+                BooleanConstant(true))),
+        IntegerConstant(1),
+        IntegerConstant(0))));
+    // clang-format on
+
+    std::string str = "4 * ((1 == 2 ? false : true) ? 1 : 0)";
     params.emplace_back(std::move(str), std::move(expected));
   }
   {
@@ -596,7 +612,7 @@ std::vector<PrecedenceTestParam> gen_precedence_params() {
   return params;
 }
 
-INSTANTIATE_TEST_SUITE_P(Fuzzer, OperatorPrecedence,
+INSTANTIATE_TEST_SUITE_P(AstGen, OperatorPrecedence,
                          ValuesIn(gen_precedence_params()));
 
 struct TypePrintTestParam {
@@ -666,4 +682,140 @@ std::vector<TypePrintTestParam> gen_typing_params() {
   return params;
 }
 
-INSTANTIATE_TEST_SUITE_P(Fuzzer, TypePrinting, ValuesIn(gen_typing_params()));
+INSTANTIATE_TEST_SUITE_P(AstGen, TypePrinting, ValuesIn(gen_typing_params()));
+
+TEST(Constraints, ScalarValues) {
+  SpecificTypes float_only = FLOAT_TYPES;
+  SpecificTypes int_only = INT_TYPES;
+
+  TypeConstraints float_constraints = float_only;
+  TypeConstraints int_constraints = int_only;
+
+  TypeConstraints any = AnyType();
+  TypeConstraints none;
+
+  PointerType void_ptr_type{QualifiedType(ScalarType::Void)};
+
+  EXPECT_THAT(float_only.allows_any_of(ScalarType::Float), IsTrue());
+  EXPECT_THAT(float_only.allows_any_of(ScalarType::Double), IsTrue());
+  EXPECT_THAT(float_only.allows_any_of(ScalarType::LongDouble), IsTrue());
+
+  EXPECT_THAT(float_only.allows_any_of(ScalarType::Void), IsFalse());
+  EXPECT_THAT(float_only.allows_any_of(ScalarType::Bool), IsFalse());
+  EXPECT_THAT(float_only.allows_any_of(ScalarType::SignedInt), IsFalse());
+  EXPECT_THAT(float_only.allows_any_of(ScalarType::UnsignedLong), IsFalse());
+
+  EXPECT_THAT(int_only.allowed_tagged_types(), IsEmpty());
+  EXPECT_THAT(float_only.allowed_tagged_types(), IsEmpty());
+
+  EXPECT_THAT(int_only.allows_non_void_pointer(), IsFalse());
+  EXPECT_THAT(float_only.allows_non_void_pointer(), IsFalse());
+
+  EXPECT_THAT(int_only.allows_void_pointer(), IsFalse());
+  EXPECT_THAT(float_only.allows_void_pointer(), IsFalse());
+
+  EXPECT_THAT(int_only.allows_any_of(ScalarType::Float), IsFalse());
+  EXPECT_THAT(int_only.allows_any_of(ScalarType::Double), IsFalse());
+  EXPECT_THAT(int_only.allows_any_of(ScalarType::LongDouble), IsFalse());
+
+  EXPECT_THAT(int_only.allows_any_of(ScalarType::Void), IsFalse());
+  EXPECT_THAT(int_only.allows_any_of(ScalarType::Bool), IsTrue());
+  EXPECT_THAT(int_only.allows_any_of(ScalarType::SignedInt), IsTrue());
+  EXPECT_THAT(int_only.allows_any_of(ScalarType::UnsignedLong), IsTrue());
+
+  EXPECT_THAT(float_constraints.allows_type(ScalarType::Float), IsTrue());
+  EXPECT_THAT(float_constraints.allows_type(ScalarType::SignedInt), IsFalse());
+  EXPECT_THAT(float_constraints.allows_type(TaggedType("Test")), IsFalse());
+  EXPECT_THAT(float_constraints.allows_type(void_ptr_type), IsFalse());
+
+  EXPECT_THAT(int_constraints.allows_type(ScalarType::Float), IsFalse());
+  EXPECT_THAT(int_constraints.allows_type(ScalarType::SignedInt), IsTrue());
+  EXPECT_THAT(int_constraints.allows_type(TaggedType("Test")), IsFalse());
+  EXPECT_THAT(int_constraints.allows_type(void_ptr_type), IsFalse());
+
+  EXPECT_THAT(any.allows_type(ScalarType::Float), IsTrue());
+  EXPECT_THAT(any.allows_type(ScalarType::SignedInt), IsTrue());
+
+  EXPECT_THAT(none.allows_type(ScalarType::Float), IsFalse());
+  EXPECT_THAT(none.allows_type(ScalarType::SignedInt), IsFalse());
+}
+
+TEST(Constraints, TaggedTypes) {
+  SpecificTypes test_struct =
+      std::unordered_set<TaggedType>{{TaggedType("TestStruct")}};
+
+  EXPECT_THAT(test_struct.allows_any_of(ScalarMask::all_set()), IsFalse());
+  EXPECT_THAT(test_struct.allowed_tagged_types(),
+              UnorderedElementsAre(TaggedType("TestStruct")));
+  EXPECT_THAT(test_struct.allows_non_void_pointer(), IsFalse());
+  EXPECT_THAT(test_struct.allows_void_pointer(), IsFalse());
+
+  TypeConstraints any = AnyType();
+  TypeConstraints none;
+
+  EXPECT_THAT(any.allows_tagged_types(), IsTrue());
+  EXPECT_THAT(any.allowed_tagged_types(), IsNull());
+  EXPECT_THAT(any.allows_type(TaggedType("TestStruct")), IsTrue());
+
+  EXPECT_THAT(none.allows_tagged_types(), IsFalse());
+  EXPECT_THAT(none.allowed_tagged_types(), IsNull());
+  EXPECT_THAT(none.allows_type(TaggedType("TestStruct")), IsFalse());
+}
+
+TEST(Constraints, PointerTypes) {
+  SpecificTypes int_ptr = SpecificTypes::make_pointer_constraints(
+      SpecificTypes(ScalarMask{ScalarType::SignedInt}));
+  SpecificTypes void_ptr = SpecificTypes::make_pointer_constraints(
+      SpecificTypes(), VoidPointerConstraint::Allow);
+
+  EXPECT_THAT(int_ptr.allows_any_of(ScalarMask::all_set()), IsFalse());
+  EXPECT_THAT(int_ptr.allowed_tagged_types(), IsEmpty());
+  EXPECT_THAT(int_ptr.allows_non_void_pointer(), IsTrue());
+  EXPECT_THAT(int_ptr.allows_void_pointer(), IsFalse());
+
+  EXPECT_THAT(void_ptr.allows_any_of(ScalarMask::all_set()), IsFalse());
+  EXPECT_THAT(void_ptr.allowed_tagged_types(), IsEmpty());
+  EXPECT_THAT(void_ptr.allows_non_void_pointer(), IsFalse());
+  EXPECT_THAT(void_ptr.allows_void_pointer(), IsTrue());
+
+  PointerType const_int_ptr{
+      QualifiedType(ScalarType::SignedInt, CvQualifier::Const)};
+  PointerType volatile_void_ptr{
+      QualifiedType(ScalarType::Void, CvQualifier::Volatile)};
+
+  TypeConstraints int_ptr_constraints = int_ptr;
+  TypeConstraints void_ptr_constraints = void_ptr;
+
+  TypeConstraints int_constraints = int_ptr.allowed_to_point_to();
+  TypeConstraints void_constraints = void_ptr.allowed_to_point_to();
+
+  EXPECT_THAT(int_ptr_constraints.allows_type(const_int_ptr), IsTrue());
+  EXPECT_THAT(int_ptr_constraints.allows_type(volatile_void_ptr), IsFalse());
+  EXPECT_THAT(int_constraints.allows_any_of(ScalarType::SignedInt), IsTrue());
+  EXPECT_THAT(int_constraints.allows_any_of(ScalarType::Void), IsFalse());
+
+  EXPECT_THAT(void_ptr_constraints.allows_type(const_int_ptr), IsFalse());
+  EXPECT_THAT(void_ptr_constraints.allows_type(volatile_void_ptr), IsTrue());
+  EXPECT_THAT(void_constraints.allows_any_of(ScalarType::SignedInt), IsFalse());
+
+  // Due to the way we represent constraints, we cannot state that we support
+  // void types :(
+  EXPECT_THAT(void_constraints.allows_any_of(ScalarType::Void), IsFalse());
+
+  TypeConstraints any = AnyType();
+  TypeConstraints none;
+
+  EXPECT_THAT(any.allows_type(const_int_ptr), IsTrue());
+  EXPECT_THAT(any.allows_type(volatile_void_ptr), IsTrue());
+
+  EXPECT_THAT(none.allows_type(const_int_ptr), IsFalse());
+  EXPECT_THAT(none.allows_type(volatile_void_ptr), IsFalse());
+}
+
+TEST(Constraints, Unsatisfiability) {
+  TypeConstraints default_ctor;
+  TypeConstraints default_specific_types = SpecificTypes();
+
+  EXPECT_THAT(default_ctor.satisfiable(), IsFalse());
+  EXPECT_THAT(default_specific_types.satisfiable(), IsFalse());
+}
