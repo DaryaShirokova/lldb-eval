@@ -46,15 +46,6 @@ using CvQualifiers = EnumBitset<CvQualifier>;
 
 std::ostream& operator<<(std::ostream& os, CvQualifiers qualifiers);
 
-enum class TypeKind : unsigned char {
-  EnumFirst,
-  ScalarType = EnumFirst,
-  TaggedType,
-  PointerType,
-  EnumLast = PointerType,
-};
-inline constexpr size_t NUM_GEN_TYPE_KINDS = (size_t)TypeKind::EnumLast + 1;
-
 enum class ScalarType : unsigned char {
   EnumFirst,
   Void = EnumFirst,

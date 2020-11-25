@@ -547,23 +547,29 @@ static inline size_t hash_combine(Args&&... args) {
   return hash_combine_impl(0, std::forward<Args>(args)...);
 }
 
+enum class HashingTypeKind {
+  PointerType,
+  QualifiedType,
+  TaggedType,
+};
+
 namespace std {
 
 using fuzzer::PointerType;
 using fuzzer::QualifiedType;
 using fuzzer::TaggedType;
-using fuzzer::TypeKind;
 
 size_t hash<PointerType>::operator()(const PointerType& type) const {
-  return hash_combine(TypeKind::PointerType, type.type());
+  return hash_combine(HashingTypeKind::PointerType, type.type());
 }
 
 size_t hash<QualifiedType>::operator()(const QualifiedType& type) const {
-  return hash_combine(type.cv_qualifiers(), type.type());
+  return hash_combine(HashingTypeKind::QualifiedType, type.cv_qualifiers(),
+                      type.type());
 }
 
 size_t hash<TaggedType>::operator()(const TaggedType& type) const {
-  return hash_combine(TypeKind::TaggedType, type.name());
+  return hash_combine(HashingTypeKind::TaggedType, type.name());
 }
 
 }  // namespace std

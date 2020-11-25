@@ -47,16 +47,22 @@ enum class ExprKind : unsigned char {
 };
 inline constexpr size_t NUM_GEN_EXPR_KINDS = (size_t)ExprKind::EnumLast + 1;
 
+enum class TypeKind : unsigned char {
+  EnumFirst,
+  ScalarType = EnumFirst,
+  TaggedType,
+  PointerType,
+  VoidPointerType,
+  EnumLast = VoidPointerType,
+};
+inline constexpr size_t NUM_GEN_TYPE_KINDS = (size_t)TypeKind::EnumLast + 1;
+
 using ExprKindMask = EnumBitset<ExprKind>;
 using TypeKindMask = EnumBitset<TypeKind>;
 
 class Weights;
 class ExprConstraints;
-class NoType;
-class AnyType;
-class SpecificTypes;
-
-using ConstraintsType = std::variant<NoType, AnyType, SpecificTypes>;
+class TypeConstraints;
 
 struct ExprKindWeightInfo {
   float initial_weight;
@@ -92,19 +98,21 @@ struct GenConfig {
   BinOpMask bin_op_mask = BinOpMask::all_set();
   UnOpMask un_op_mask = UnOpMask::all_set();
 
+  ExprKindMask expr_kind_mask = ExprKindMask::all_set();
+
   std::array<ExprKindWeightInfo, NUM_GEN_EXPR_KINDS> expr_kind_weights = {{
-      {0.0f, 0.0f},  // ExprKind::IntegerConstant
+      {1.0f, 0.0f},  // ExprKind::IntegerConstant
       {2.0f, 0.0f},  // ExprKind::DoubleConstant
-      {0.0f, 0.0f},  // ExprKind::VariableExpr
+      {1.0f, 0.0f},  // ExprKind::VariableExpr
       {7.0f, 0.4f},  // ExprKind::UnaryExpr
       {3.0f, 0.4f},  // ExprKind::BinaryExpr
-      {0.0f, 0.1f},  // ExprKind::AddressOf
-      {0.0f, 0.1f},  // ExprKind::MemberOf
-      {0.0f, 0.1f},  // ExprKind::MemberOfPtr
-      {0.0f, 0.1f},  // ExprKind::ArrayIndex
-      {0.0f, 0.1f},  // ExprKind::TernaryExpr
-      {0.0f, 0.0f},  // ExprKind::BooleanConstant
-      {0.0f, 0.1f},  // ExprKind::DereferenceExpr
+      {1.0f, 0.1f},  // ExprKind::AddressOf
+      {1.0f, 0.1f},  // ExprKind::MemberOf
+      {1.0f, 0.1f},  // ExprKind::MemberOfPtr
+      {1.0f, 0.1f},  // ExprKind::ArrayIndex
+      {1.0f, 0.1f},  // ExprKind::TernaryExpr
+      {1.0f, 0.0f},  // ExprKind::BooleanConstant
+      {1.0f, 0.1f},  // ExprKind::DereferenceExpr
       {1.0f, 0.4f},  // ExprKind::CastExpr
   }};
 
@@ -112,6 +120,7 @@ struct GenConfig {
       {2.0f, 0.0f},  // TypeKind::ScalarType
       {1.0f, 0.0f},  // TypeKind::TaggedType
       {1.0f, 0.1f},  // TypeKind::PointerType
+      {1.0f, 0.1f},  // TypeKind::VoidPointerType
   }};
 
   std::unordered_map<Type, std::vector<std::string>> symbol_table;
@@ -198,15 +207,16 @@ class ExprGenerator {
                                            const ExprConstraints& constraints);
 
   std::optional<Type> gen_type(const Weights& weights,
-                               const ExprConstraints& constraints);
+                               const TypeConstraints& constraints);
   std::optional<Type> gen_type_impl(const Weights& weights,
-                                    const ConstraintsType& constraints);
+                                    const TypeConstraints& constraints);
   std::optional<QualifiedType> gen_qualified_type(
-      const Weights& weights, const ConstraintsType& constraints);
+      const Weights& weights, const TypeConstraints& constraints);
   std::optional<Type> gen_pointer_type(const Weights& weights,
-                                       const ConstraintsType& constraints);
-  std::optional<Type> gen_tagged_type(const ConstraintsType& constraints);
-  std::optional<Type> gen_scalar_type(const ConstraintsType& constraints);
+                                       const TypeConstraints& constraints);
+  std::optional<Type> gen_void_pointer_type(const TypeConstraints& constraints);
+  std::optional<Type> gen_tagged_type(const TypeConstraints& constraints);
+  std::optional<Type> gen_scalar_type(const TypeConstraints& constraints);
   CvQualifiers gen_cv_qualifiers();
 
   std::optional<Expr> gen_with_weights(const Weights& weights,

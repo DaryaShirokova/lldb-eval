@@ -4,10 +4,12 @@ cc_library(
     name = "fuzzer_lib",
     srcs = [
         "ast.cc",
+        "constraints.cc",
         "expr_gen.cc",
     ],
     hdrs = [
         "ast.h",
+        "constraints.h",
         "enum_bitset.h",
         "expr_gen.h",
     ],

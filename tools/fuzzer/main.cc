@@ -68,7 +68,6 @@ void run_repl(lldb::SBFrame& frame) {
 
 void run_fuzzer(lldb::SBFrame& frame) {
   std::random_device rd;
-  // unsigned seed = 2934586150;
   auto seed = rd();
   printf("Seed for this run is: %u\n", seed);
 
@@ -80,12 +79,24 @@ void run_fuzzer(lldb::SBFrame& frame) {
   cfg.bin_op_mask[fuzzer::BinOp::Div] = false;
   cfg.bin_op_mask[fuzzer::BinOp::Mod] = false;
 
+  cfg.expr_kind_mask[fuzzer::ExprKind::DereferenceExpr] = false;
+  cfg.expr_kind_mask[fuzzer::ExprKind::AddressOf] = false;
+  cfg.expr_kind_mask[fuzzer::ExprKind::ArrayIndex] = false;
+  cfg.expr_kind_mask[fuzzer::ExprKind::MemberOf] = false;
+  cfg.expr_kind_mask[fuzzer::ExprKind::MemberOfPtr] = false;
+
   cfg.symbol_table.emplace(
       std::make_pair(fuzzer::Type(fuzzer::ScalarType::SignedInt),
                      std::vector<std::string>{"x", "int_min", "int_max"}));
   cfg.symbol_table.emplace(
       std::make_pair(fuzzer::Type(fuzzer::ScalarType::SignedLong),
                      std::vector<std::string>{"long_min", "long_max"}));
+  cfg.symbol_table.emplace(std::make_pair(
+      fuzzer::PointerType(fuzzer::QualifiedType(fuzzer::ScalarType::SignedInt)),
+      std::vector<std::string>{"p"}));
+  cfg.symbol_table.emplace(std::make_pair(
+      fuzzer::PointerType(fuzzer::QualifiedType(fuzzer::ScalarType::Char)),
+      std::vector<std::string>{"test_str"}));
 
   fuzzer::ExprGenerator gen(std::move(rng), std::move(cfg));
   std::vector<std::string> exprs;
