@@ -41,6 +41,7 @@ static void TestArithmetic() {
   auto fdenorm = 0x0.1p-145f;
 
   // BREAK(TestArithmetic)
+  // BREAK(TestZeroDivision)
 }
 
 static void TestBitwiseOperators() {
@@ -83,6 +84,8 @@ static void TestPointerArithmetic() {
   void** pp_void1 = pp_void0 + 1;
 
   // BREAK(TestPointerArithmetic)
+  // BREAK(PointerPointerComparison)
+  // BREAK(PointerIntegerComparison)
 }
 
 static void TestLogicalOperators() {
@@ -252,6 +255,20 @@ static void TestCStyleCast() {
   // BREAK(TestCStyleCastPointer)
 }
 
+static void TestCStyleCastToReference() {
+  struct InnerFoo {
+    int a;
+    int b;
+  };
+
+  InnerFoo ifoo;
+  (void)ifoo;
+
+  int arr[] = {1, 2, 3, 4};
+
+  // BREAK(TestCStyleCastReference)
+}
+
 // Referenced by TestQualifiedId.
 namespace ns {
 
@@ -380,6 +397,22 @@ static void TestTemplateTypes() {
   // BREAK(TestTemplateTypes)
 }
 
+void TestValueScope() {
+  class Value {
+   public:
+    Value(int x, double y) : x_(x), y_(y) {}
+
+   private:
+    int x_;
+    double y_;
+  };
+
+  Value var(1, 2.5);
+  uint64_t z_ = 3;
+
+  // BREAK(TestValueScope)
+}
+
 namespace test_binary {
 
 void main() {
@@ -398,8 +431,10 @@ void main() {
   tm.TestAddressOf(42);
   TestSubscript();
   TestCStyleCast();
+  TestCStyleCastToReference();
   TestQualifiedId();
   TestTemplateTypes();
+  TestValueScope();
 
   // break here
 }

@@ -29,38 +29,18 @@
 #include "clang/Lex/ModuleLoader.h"
 #include "clang/Lex/Preprocessor.h"
 #include "lldb-eval/ast.h"
-#include "lldb-eval/expression_context.h"
+#include "lldb-eval/context.h"
 
 namespace lldb_eval {
-
-inline std::string TokenKindsJoin(clang::tok::TokenKind k) {
-  std::string s = clang::tok::getTokenName(k);
-  return "'" + s + "'";
-}
-
-template <typename... Ts>
-inline std::string TokenKindsJoin(clang::tok::TokenKind k, Ts... ks) {
-  return TokenKindsJoin(k) + ", " + TokenKindsJoin(ks...);
-}
 
 // Pure recursive descent parser for C++ like expressions.
 // EBNF grammar is described here:
 // docs/expr-ebnf.txt
 class Parser {
  public:
-  // Type for representing errors that can occur during the parsing of the
-  // expression.
-  // TODO(werat): Use std::string + std::error_code?
-  // TODO(werat): This should at least contain the position in the expression.
-  using Error = std::string;
+  explicit Parser(std::shared_ptr<Context> ctx);
 
- public:
-  explicit Parser(ExpressionContext& expr_ctx);
-
-  ExprResult Run();
-
-  bool HasError() { return !error_.empty(); }
-  const Error& GetError() { return error_; }
+  ExprResult Run(Error& error);
 
  private:
   ExprResult ParseExpression();
@@ -98,11 +78,12 @@ class Parser {
   bool IsCvQualifier(clang::Token token) const;
   bool IsPtrOperator(clang::Token token) const;
 
-  IdExpression ParseIdExpression();
+  std::string ParseIdExpression();
   std::string ParseUnqualifiedId();
 
   ExprResult ParseNumericLiteral();
   ExprResult ParseBooleanLiteral();
+  ExprResult ParsePointerLiteral();
 
   ExprResult ParseNumericConstant(clang::Token token);
   ExprResult ParseFloatingLiteral(clang::NumericLiteralParser& literal,
@@ -111,38 +92,27 @@ class Parser {
                                  clang::Token token);
 
   void ConsumeToken();
-  void BailOut(const std::string& error, clang::SourceLocation loc);
+  void BailOut(ErrorCode error_code, const std::string& error,
+               clang::SourceLocation loc);
 
-  void Expect(clang::tok::TokenKind kind) {
-    if (token_.isNot(kind)) {
-      BailOut("expected " + TokenKindsJoin(kind) +
-                  ", got: " + TokenDescription(token_),
-              token_.getLocation());
-    }
-  }
+  void Expect(clang::tok::TokenKind kind);
 
   template <typename... Ts>
-  void ExpectOneOf(clang::tok::TokenKind k, Ts... ks) {
-    if (!token_.isOneOf(k, ks...)) {
-      BailOut("expected any of (" + TokenKindsJoin(k, ks...) +
-                  "), got: " + TokenDescription(token_),
-              token_.getLocation());
-    }
-  }
+  void ExpectOneOf(clang::tok::TokenKind k, Ts... ks);
 
-  std::string TokenDescription(const clang::Token& token) {
-    auto spelling = pp_->getSpelling(token);
-    auto kind_name = token.getName();
-    return "<'" + spelling + "' (" + kind_name + ")>";
-  }
+  std::string TokenDescription(const clang::Token& token);
 
  private:
   friend class TentativeParsingAction;
 
-  // Parser doesn't own expression context. The produced AST may depend on it
-  // (for example, for source locations), so it's expected that expression
+  // Parser doesn't own the evaluation context. The produced AST may depend on
+  // it (for example, for source locations), so it's expected that expression
   // context will outlive the parser.
-  ExpressionContext* expr_ctx_;
+  std::shared_ptr<Context> ctx_;
+
+  // Convenience references, used by the interpreter to lookup variables and
+  // types, create objects, perform casts, etc.
+  lldb::SBTarget target_;
 
   // The token lexer is stopped at (aka "current token").
   clang::Token token_;
@@ -179,7 +149,7 @@ class TentativeParsingAction {
   }
   void Rollback() {
     parser_->pp_->Backtrack();
-    parser_->error_.clear();
+    parser_->error_.Clear();
     parser_->token_ = backtrack_token_;
     enabled_ = false;
   }

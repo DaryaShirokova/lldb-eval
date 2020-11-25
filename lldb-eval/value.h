@@ -54,6 +54,7 @@ class Value {
   bool IsFloat();
   bool IsPointer();
   bool IsPointerToVoid();
+  bool IsNullPtrType();
   bool IsSigned();
 
   bool GetBool();
@@ -121,11 +122,11 @@ Value CreateValueFromBytes(lldb::SBTarget target, const void* bytes,
 Value CreateValueFromBytes(lldb::SBTarget target, const void* bytes,
                            lldb::BasicType basic_type);
 
-Value CreateValueFromAP(lldb::SBTarget target, const llvm::APInt& v,
-                        lldb::SBType type);
+Value CreateValueFromAPInt(lldb::SBTarget target, const llvm::APInt& v,
+                           lldb::SBType type);
 
-Value CreateValueFromAP(lldb::SBTarget target, const llvm::APFloat& v,
-                        lldb::SBType type);
+Value CreateValueFromAPFloat(lldb::SBTarget target, const llvm::APFloat& v,
+                             lldb::SBType type);
 
 Value CreateValueFromPointer(lldb::SBTarget target, uintptr_t addr,
                              lldb::SBType type);
@@ -133,6 +134,8 @@ Value CreateValueFromPointer(lldb::SBTarget target, uintptr_t addr,
 Value CreateValueFromBool(lldb::SBTarget target, bool value);
 
 Value CreateValueZero(lldb::SBTarget target);
+
+Value CreateValueNullptr(lldb::SBTarget target);
 
 }  // namespace lldb_eval
 

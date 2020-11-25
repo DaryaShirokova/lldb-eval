@@ -18,10 +18,8 @@
 #include <string>
 
 #include "cpp-linenoise/linenoise.hpp"
-#include "lldb-eval/eval.h"
-#include "lldb-eval/parser.h"
+#include "lldb-eval/api.h"
 #include "lldb-eval/runner.h"
-#include "lldb-eval/value.h"
 #include "lldb/API/SBFrame.h"
 #include "lldb/API/SBProcess.h"
 #include "lldb/API/SBTarget.h"
@@ -30,53 +28,59 @@
 
 using bazel::tools::cpp::runfiles::Runfiles;
 
+int64_t timer(std::function<void()> func) {
+  auto start = std::chrono::high_resolution_clock::now();
+  func();
+  auto total = std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::high_resolution_clock::now() - start);
+
+  return total.count();
+}
+
 void EvalExpr(lldb::SBFrame frame, const std::string& expr) {
-  lldb_eval::ExpressionContext expr_ctx(expr, lldb::SBExecutionContext(frame));
+  lldb::SBError error;
+  lldb::SBValue value;
 
-  auto time_start = std::chrono::high_resolution_clock::now();
+  auto elapsed = timer([&]() {
+    value = lldb_eval::EvaluateExpression(frame, expr.c_str(), error);
+  });
 
-  lldb_eval::Parser p(expr_ctx);
-  auto expr_result = p.Run();
-
-  auto time_parse = std::chrono::high_resolution_clock::now();
-
-  if (p.HasError()) {
-    std::cerr << p.GetError() << std::endl;
-  }
-
-  lldb_eval::Interpreter eval(expr_ctx);
-
-  lldb_eval::EvalError error;
-  lldb_eval::Value result = eval.Eval(expr_result.get(), error);
-
-  auto time_eval = std::chrono::high_resolution_clock::now();
-
-  if (error) {
-    std::cerr << error.message() << std::endl;
+  if (error.GetError()) {
+    std::cerr << error.GetCString() << std::endl;
   } else {
     // Due to various bugs result can still be NULL even though there was no
     // error reported. Printing NULL leads to segfault, so check and replace it.
-    auto sb_value = result.inner_value();
-
-    if (sb_value.IsValid()) {
-      std::cerr << "value = " << sb_value.GetValue() << std::endl;
-      std::cerr << "type  = " << sb_value.GetTypeName() << std::endl;
+    if (value.IsValid()) {
+      std::cerr << "value = " << value.GetValue() << std::endl;
+      std::cerr << "type  = " << value.GetTypeName() << std::endl;
     } else {
       std::cerr << "Unknown error, result is invalid." << std::endl;
     }
   }
 
-  auto total = std::chrono::duration_cast<std::chrono::microseconds>(
-      time_eval - time_start);
-  auto elapsed_parse = std::chrono::duration_cast<std::chrono::microseconds>(
-      time_parse - time_start);
-  auto elapsed_eval = std::chrono::duration_cast<std::chrono::microseconds>(
-      time_eval - time_parse);
+  std::cerr << "----------" << std::endl
+            << "elapsed = " << elapsed << "us" << std::endl;
+}
+
+void EvalExprLLDB(lldb::SBFrame frame, const std::string& expr) {
+  lldb::SBError error;
+  lldb::SBValue value;
+
+  auto elapsed = timer([&]() {
+    value = frame.EvaluateExpression(expr.c_str());
+    error = value.GetError();
+  });
+
+  std::cerr << "== LLDB == " << std::endl;
+  if (error.GetError()) {
+    std::cerr << error.GetCString() << std::endl;
+  } else {
+    std::cerr << "value = " << value.GetValue() << std::endl;
+    std::cerr << "type  = " << value.GetTypeName() << std::endl;
+  }
 
   std::cerr << "----------" << std::endl
-            << "elapsed = " << total.count()
-            << "us (parse = " << elapsed_parse.count()
-            << "us, eval = " << elapsed_eval.count() << "us)" << std::endl;
+            << "elapsed = " << elapsed << "us" << std::endl;
 }
 
 void RunRepl(lldb::SBFrame frame) {
@@ -95,6 +99,7 @@ void RunRepl(lldb::SBFrame frame) {
     }
 
     EvalExpr(frame, expr);
+    EvalExprLLDB(frame, expr);
 
     linenoise::AddHistory(expr.c_str());
   }
@@ -132,6 +137,7 @@ int main(int argc, char** argv) {
     RunRepl(frame);
   } else {
     EvalExpr(frame, expr);
+    EvalExprLLDB(frame, expr);
   }
 
   process.Destroy();

@@ -45,6 +45,10 @@ bool Value::IsPointerToVoid() {
          type_.GetPointeeType().GetBasicType() == lldb::eBasicTypeVoid;
 }
 
+bool Value::IsNullPtrType() {
+  return type_.GetBasicType() == lldb::eBasicTypeNullPtr;
+}
+
 bool Value::IsSigned() { return type_.GetTypeFlags() & lldb::eTypeIsSigned; }
 
 bool Value::GetBool() {
@@ -205,7 +209,7 @@ void PerformArithmeticConversions(lldb::SBTarget target, Value* l, Value* r) {
       llvm::APSInt i = l->GetInteger();
       f.convertFromAPInt(i, i.isSigned(), llvm::APFloat::rmNearestTiesToEven);
 
-      *l = CreateValueFromAP(target, f, r->type());
+      *l = CreateValueFromAPFloat(target, f, r->type());
       return;
     }
 
@@ -216,7 +220,7 @@ void PerformArithmeticConversions(lldb::SBTarget target, Value* l, Value* r) {
       f.convert(r->GetFloat().getSemantics(),
                 llvm::APFloat::rmNearestTiesToEven, &ignore);
 
-      *l = CreateValueFromAP(target, f, r->type());
+      *l = CreateValueFromAPFloat(target, f, r->type());
       return;
     }
   }
@@ -238,7 +242,7 @@ void PerformArithmeticConversions(lldb::SBTarget target, Value* l, Value* r) {
 
         auto type = target.GetBasicType(
             BasicTypeToUnsigned(r->type().GetCanonicalType().GetBasicType()));
-        *r = CreateValueFromAP(target, i, type);
+        *r = CreateValueFromAPInt(target, i, type);
       }
     }
 
@@ -246,7 +250,7 @@ void PerformArithmeticConversions(lldb::SBTarget target, Value* l, Value* r) {
     i = i.extOrTrunc(static_cast<uint32_t>(r->type().GetByteSize() * CHAR_BIT));
     i.setIsSigned(r->IsSigned());
 
-    *l = CreateValueFromAP(target, i, r->type());
+    *l = CreateValueFromAPInt(target, i, r->type());
     return;
   }
 
@@ -361,14 +365,14 @@ Value CreateValueFromBytes(lldb::SBTarget target, const void* bytes,
   return CreateValueFromBytes(target, bytes, target.GetBasicType(basic_type));
 }
 
-Value CreateValueFromAP(lldb::SBTarget target, const llvm::APInt& v,
-                        lldb::SBType type) {
+Value CreateValueFromAPInt(lldb::SBTarget target, const llvm::APInt& v,
+                           lldb::SBType type) {
   return CreateValueFromBytes(target, v.getRawData(), type);
 }
 
-Value CreateValueFromAP(lldb::SBTarget target, const llvm::APFloat& v,
-                        lldb::SBType type) {
-  return CreateValueFromAP(target, v.bitcastToAPInt(), type);
+Value CreateValueFromAPFloat(lldb::SBTarget target, const llvm::APFloat& v,
+                             lldb::SBType type) {
+  return CreateValueFromAPInt(target, v.bitcastToAPInt(), type);
 }
 
 Value CreateValueFromPointer(lldb::SBTarget target, uintptr_t addr,
@@ -383,6 +387,11 @@ Value CreateValueFromBool(lldb::SBTarget target, bool value) {
 Value CreateValueZero(lldb::SBTarget target) {
   int zero = 0;
   return CreateValueFromBytes(target, &zero, lldb::eBasicTypeInt);
+}
+
+Value CreateValueNullptr(lldb::SBTarget target) {
+  uintptr_t zero = 0;
+  return CreateValueFromBytes(target, &zero, lldb::eBasicTypeNullPtr);
 }
 
 }  // namespace lldb_eval
